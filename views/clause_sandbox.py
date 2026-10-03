@@ -66,8 +66,8 @@ def render_picker(state_key, noun="draft"):
     st.caption(f"{sum(included.values())} of {len(included)} clauses included.")
 
 
-def render_preview(state_key, noun="draft"):
-    """Numbered preview of the selected clauses, with a Word download."""
+def render_preview(state_key, noun="draft", download=True):
+    """Numbered preview of the selected clauses, with a Word download unless `download` is False."""
     library = library_for(ensure_state(state_key))
     rendered = renumber_and_render(library)
     st.subheader(f"Preview ({len(rendered)} clauses)")
@@ -101,6 +101,8 @@ def render_preview(state_key, noun="draft"):
             for table_data in clause.tables:
                 st.table([dict(zip(table_data["headers"], row)) for row in table_data["rows"]])
 
+    if not download:
+        return
     st.divider()
     buf = io.BytesIO()
     render_docx(library, buf)

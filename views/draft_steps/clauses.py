@@ -181,6 +181,9 @@ def render():
     with st.expander("Clauses in the draft", expanded=True):
         clause_sandbox.render_picker(STATE_KEY)
 
+    with st.expander("Clause preview", expanded=True):
+        clause_sandbox.render_preview(STATE_KEY, noun="draft", download=False)
+
     st.subheader("Ask for changes")
     last_idx = max((i for i, m in enumerate(chat) if m["role"] == "assistant"), default=None)
     latest = chat[last_idx] if last_idx is not None else None
