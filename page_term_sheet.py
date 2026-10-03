@@ -24,6 +24,16 @@ if uploaded and st.button("Parse and auto-fill the form"):
                 st.session_state.term_sheet.installments = parsed.installments
         elif getattr(parsed, f):
             setattr(st.session_state.term_sheet, f, getattr(parsed, f))
+
+    # Widgets below are given explicit `key`s (needed because labels like "Company name" repeat
+    # for Owner/Contractor). Once a keyed widget has rendered, Streamlit keeps using whatever is
+    # in st.session_state[key] on every later rerun and ignores a new `value=` argument entirely --
+    # so the parsed data above would silently never reach the screen unless those stale keys are
+    # cleared first, forcing each widget to re-initialise from the freshly updated TermSheet.
+    for key in list(st.session_state.keys()):
+        if key.startswith(("own_", "con_", "inst_")):
+            del st.session_state[key]
+
     st.success(f"Auto-filled from {uploaded.name}. Every field below is still editable.")
     st.rerun()
 
