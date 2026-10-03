@@ -18,9 +18,12 @@ class Clause:
     title: str
     items: list = field(default_factory=list)              # list[Item]; empty for un-numbered clauses
     plain_paragraphs: list = field(default_factory=list)    # used instead of items for un-numbered clauses
+    tables: list = field(default_factory=list)              # list of {"headers": [...], "rows": [[...], ...]}
     optional: bool = False
     included: bool = True
     category: str = ""
+    table_headers: list = field(default_factory=list)
+    table_rows: list = field(default_factory=list)   # list of row-tuples, same length as table_headers
     authored_number: str = ""  # the clause number this Item text is actually phrased against;
     # fixed once in build_library() and never recomputed from the current included/order state.
 

@@ -6,6 +6,19 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from renumber import renumber_and_render
 
 
+def _add_table(doc, table_data):
+    t = doc.add_table(rows=1, cols=len(table_data["headers"]))
+    t.style = "Light Grid Accent 1"
+    for cell, text in zip(t.rows[0].cells, table_data["headers"]):
+        cell.text = text
+        cell.paragraphs[0].runs[0].bold = True
+    for row in table_data["rows"]:
+        cells = t.add_row().cells
+        for cell, text in zip(cells, row):
+            cell.text = text
+    doc.add_paragraph()
+
+
 def render_docx(clauses, out_path):
     rendered = renumber_and_render(clauses)
 
@@ -25,10 +38,10 @@ def render_docx(clauses, out_path):
         r = h.add_run(f"{number}.\t{clause.title}")
         r.bold = True
 
-        if clause.plain_paragraphs:
-            for p in clause.plain_paragraphs:
-                doc.add_paragraph(p)
-        for line in item_lines:
+        for p in clause.plain_paragraphs:
+            doc.add_paragraph(p)
+
+        for i, line in enumerate(item_lines):
             p = doc.add_paragraph()
             if line.startswith("    "):
                 p.paragraph_format.left_indent = Cm(1.0)
@@ -36,6 +49,13 @@ def render_docx(clauses, out_path):
             else:
                 p.paragraph_format.left_indent = Cm(0.5)
                 p.add_run(line)
+            if i == 0 and clause.tables:
+                for table_data in clause.tables:
+                    _add_table(doc, table_data)
+
+        if not item_lines:
+            for table_data in clause.tables:
+                _add_table(doc, table_data)
 
     doc.save(out_path)
     return rendered

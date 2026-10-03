@@ -24,7 +24,23 @@ def build_library():
                    "Attachment [*], the provisions of this Agreement shall prevail.",
                ], category="general"),
 
-        Clause("price_payment", "Contract Price and Terms of Payment", items=[
+        Clause("price_payment", "Contract Price and Terms of Payment",
+               tables=[{
+                   "headers": ["Installment", "%", "Amount (THB)", "Condition / Payment Due"],
+                   "rows": [
+                       ["[*]", "[*]", "[*]", "Payable upon the Owner's confirmation of engagement, "
+                        "with the purchase order attached."],
+                       ["[*]", "[*]", "[*]", "Payable upon completion of installation of the "
+                        "mounting system."],
+                       ["[*]", "[*]", "[*]", "Payable upon completion of installation of the PV "
+                        "modules."],
+                       ["[*]", "[*]", "[*]", "Payable upon completion of installation of the "
+                        "inverter."],
+                       ["[*]", "[*]", "[*]", "Payable upon completion of installation of the "
+                        "electrical system."],
+                   ],
+               }],
+               items=[
             Item("The Owner agrees to pay the Contractor the Contract Price at the fixed total "
                  "amount of THB [*] ([*]), inclusive / exclusive of VAT, the terms of payment "
                  "shall be divided into the installments set out in the payment table."),
@@ -41,7 +57,19 @@ def build_library():
             Item("In the event that there is any change in the Works under this Agreement which "
                  "affects the Contract Price, the Parties agree to adjust the Contract Price to "
                  "reflect the actual value of the relevant payment."),
-        ], category="payment"),
+        ], category="payment",
+           table_headers=["Installment", "%", "Amount (THB)", "Condition / Payment Due"],
+           table_rows=[
+               ("[*]", "[*]", "[*]", "Payable upon the Owner's confirmation of engagement, with "
+                                     "the purchase order attached."),
+               ("[*]", "[*]", "[*]", "Payable upon completion of installation of the mounting "
+                                     "system."),
+               ("[*]", "[*]", "[*]", "Payable upon completion of installation of the PV "
+                                     "modules."),
+               ("[*]", "[*]", "[*]", "Payable upon completion of installation of the inverter."),
+               ("[*]", "[*]", "[*]", "Payable upon completion of installation of the electrical "
+                                     "system."),
+           ]),
 
         Clause("contractor_representations", "Contractor\u2019s Representations and Warranties", items=[
             Item("The Contractor warrants that in the performance of this Agreement, the "
