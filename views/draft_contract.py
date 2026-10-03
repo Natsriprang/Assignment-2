@@ -2,12 +2,13 @@
 step under a header with back/next arrows. To add a step, write its render() and add it to STEPS."""
 import streamlit as st
 
-from views.draft_steps import flow, interpret, sandbox, term_sheet
+from ai.llm import call_summary
+from views.draft_steps import clauses, flow, preview, term_sheet
 
 STEPS = [
     flow.Step("Term sheet", term_sheet.render, term_sheet.is_complete),
-    flow.Step("Interpret request", interpret.render, interpret.is_confirmed),
-    flow.Step("Clause sandbox", sandbox.render),
+    flow.Step("Clauses", clauses.render, clauses.has_analysis),
+    flow.Step("Draft preview", preview.render),
 ]
 
 st.session_state[flow.COUNT_KEY] = len(STEPS)
@@ -29,3 +30,8 @@ with header:
                    disabled=index == len(STEPS) - 1 or not step.ready(), help="Next step")
     st.caption(" \u203a ".join(f"**{s.title}**" if i == index else s.title for i, s in enumerate(STEPS)))
     st.divider()
+
+calls = st.session_state.get(flow.CALLS_KEY, [])
+with st.sidebar:
+    st.divider()
+    st.caption(f"AI calls this run: {len(calls)}" + (f" ({call_summary(calls)})" if calls else ""))

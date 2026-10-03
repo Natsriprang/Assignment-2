@@ -1,7 +1,6 @@
-"""Clause sandbox component: toggle which clauses are included, preview the renumbered result,
-download it as a Word file. Used by the Draft contract workflow (step 3) and by the standalone
-Generate contract template page. Each use passes its own `state_key`, so their selections and
-checkbox states never overlap."""
+"""Clause sandbox components for the Draft contract workflow. The selection (clause key ->
+included flag) lives in one session_state dict under `state_key`; the picker edits it and the
+preview reads it, so they never disagree."""
 import io
 import re
 
@@ -9,6 +8,7 @@ import streamlit as st
 
 from core.clause_data import build_library
 from core.clauses import cross_reference_scan
+from core.draft_state import library_for
 from core.render import render_docx
 from core.renumber import renumber_and_render
 
@@ -18,48 +18,57 @@ def plain(text):
     return re.sub(r"([\\`*_\[\]#>|~$<])", r"\\\1", text)
 
 
-def render(state_key, noun="draft"):
-    """`state_key` names the session_state dict (clause key -> included) this instance edits."""
+def checkbox_key(state_key, clause_key):
+    return f"{state_key}_chk_{clause_key}"
+
+
+def ensure_state(state_key):
+    if state_key not in st.session_state:
+        st.session_state[state_key] = {c.key: c.included for c in build_library()}
+    return st.session_state[state_key]
+
+
+def set_clause(state_key, clause_key, included):
+    """Sets one clause, including its checkbox. Safe to call from a widget callback."""
+    ensure_state(state_key)[clause_key] = included
+    st.session_state[checkbox_key(state_key, clause_key)] = included
+
+
+def render_picker(state_key, noun="draft"):
+    """Tick or untick clauses. Checkbox widgets have no `value=`: their state is seeded from the
+    selection dict instead, so changing a clause from code never clashes with the widget."""
     st.markdown(
         "<style>[data-testid='stCheckbox'] p { white-space: normal !important; "
         "overflow-wrap: break-word !important; }</style>",
         unsafe_allow_html=True,
     )
+    included = ensure_state(state_key)
+    library = library_for(included)
 
-    if state_key not in st.session_state:
-        st.session_state[state_key] = {c.key: c.included for c in build_library()}
-    included = st.session_state[state_key]
-
-    library = build_library()
-    for c in library:
-        c.included = included.get(c.key, c.included)
-
-    default_clauses = [c for c in library if not c.optional]
-    optional_clauses = [c for c in library if c.optional]
-
-    def checkbox_grid(clause_list, cols_per_row=3):
-        for i in range(0, len(clause_list), cols_per_row):
-            row = clause_list[i:i + cols_per_row]
+    def grid(clauses, cols_per_row=3):
+        for i in range(0, len(clauses), cols_per_row):
             cols = st.columns(cols_per_row)
-            for col, c in zip(cols, row):
+            for col, c in zip(cols, clauses[i:i + cols_per_row]):
                 with col:
-                    checked = st.checkbox(c.title, value=c.included, key=f"{state_key}_chk_{c.key}")
-                    included[c.key] = checked
+                    key = checkbox_key(state_key, c.key)
+                    st.session_state.setdefault(key, included[c.key])
+                    included[c.key] = st.checkbox(c.title, key=key)
 
-    st.subheader("Standard clauses")
+    standard = [c for c in library if not c.optional]
+    optional = [c for c in library if c.optional]
+    st.markdown("**Standard clauses**")
     st.caption(f"Included by default. Untick to remove one from this {noun}.")
-    checkbox_grid(default_clauses)
-
-    if optional_clauses:
-        st.subheader("Optional clauses")
+    grid(standard)
+    if optional:
+        st.markdown("**Optional clauses**")
         st.caption(f"Not included by default. Tick to add one to this {noun}.")
-        checkbox_grid(optional_clauses)
+        grid(optional)
+    st.caption(f"{sum(included.values())} of {len(included)} clauses included.")
 
-    for c in library:
-        c.included = included[c.key]
 
-    st.divider()
-
+def render_preview(state_key, noun="draft"):
+    """Numbered preview of the selected clauses, with a Word download."""
+    library = library_for(ensure_state(state_key))
     rendered = renumber_and_render(library)
     st.subheader(f"Preview ({len(rendered)} clauses)")
 
@@ -71,8 +80,7 @@ def render(state_key, noun="draft"):
             for key, text, mention in flagged:
                 st.markdown(f"**{key}**: `{mention}` in \u201c{plain(text[:80])}...\u201d")
 
-    numbers_line = "  \u2192  ".join(f"{num}. {c.title}" for num, c, _ in rendered)
-    st.caption(numbers_line)
+    st.caption("  \u2192  ".join(f"{num}. {c.title}" for num, c, _ in rendered))
 
     selected_title = st.selectbox("View a clause", [c.title for _, c, _ in rendered],
                                   key=f"{state_key}_view")

@@ -9,8 +9,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from core.clause_data import build_library
-from ai.interpret import (candidate_question, context_summary, interpret_request, resolve_included,
-                          result_lines, term_sheet_warnings, validate)
+from ai.interpret import (candidate_question, clause_digest, context_summary, interpret_request,
+                          resolve_included, result_lines, term_sheet_warnings, validate)
+from ai.llm import CountingClient, call_summary
+from core.draft_state import library_for
 from core.renumber import renumber_and_render
 from core.term_sheet_fields import Installment, TermSheet
 
@@ -353,6 +355,55 @@ def test_candidate_question_text():
     text = candidate_question(item, "Completion Deadline")
     assert text.startswith("You wrote \u201cdefault interest\u201d") and "'Completion Deadline'" in text
     assert text.endswith("Is that what you meant?")
+
+
+def test_counting_client_records_completed_calls_only():
+    log = []
+    ok = CountingClient(FakeClient(empty()), log, "interpret")
+    interpret_request(sample_term_sheet(), build_library(), ok, model="m1")
+    interpret_request(sample_term_sheet(), build_library(), ok, model="m1")
+    assert log == [{"step": "interpret", "model": "m1"}] * 2
+
+    class Failing:
+        chat = SimpleNamespace(completions=SimpleNamespace(
+            create=lambda **k: (_ for _ in ()).throw(RuntimeError("boom"))))
+    try:
+        interpret_request(sample_term_sheet(), build_library(), CountingClient(Failing(), log, "x"))
+    except RuntimeError:
+        pass
+    assert len(log) == 2          # the failed call was not counted
+
+
+def test_call_summary():
+    assert call_summary([]) == ""
+    log = [{"step": "interpret"}, {"step": "review"}, {"step": "interpret"}]
+    assert call_summary(log) == "interpret \u00d72, review \u00d71"
+
+
+def test_library_for_applies_selection():
+    lib = library_for({"taxation": False, "owner_representations": True})
+    state = {c.key: c.included for c in lib}
+    assert state["taxation"] is False and state["owner_representations"] is True
+    assert state["suspension"] is True                       # untouched keys keep their default
+    assert library_for({}) and all(c.included == d.included for c, d in zip(library_for({}), build_library()))
+
+
+def test_digest_shows_current_state_not_default():
+    digest = clause_digest(library_for({"taxation": False, "owner_representations": True}))
+    blocks = {b.split("]")[0]: b for b in digest.split("\n\n[")}
+    tax = next(b for k, b in blocks.items() if "key: taxation" in k)
+    own = next(b for k, b in blocks.items() if "key: owner_representations" in k)
+    assert "currently excluded from the draft" in tax and "standard clause" in tax
+    assert "currently included in the draft" in own and "optional clause" in own
+
+
+def test_noop_filter_uses_current_state():
+    lib = library_for({"taxation": False})
+    result = validate(empty(clause_actions=[action("taxation", "exclude", "x"),
+                                            action("suspension", "exclude", "x")]), lib, "x")
+    assert [a.clause_key for a in result.clause_actions] == ["suspension"]
+    again = validate(empty(clause_actions=[action("taxation", "include", "x")]), lib, "x")
+    assert [a.clause_key for a in again.clause_actions] == ["taxation"]
 
 
 def test_context_summary_when_nothing_found():

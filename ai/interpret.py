@@ -80,10 +80,10 @@ Output four lists.
 
 1. clause_actions -- add or remove a WHOLE clause.
    - "exclude": the user asks to drop, remove or omit the subject matter of a clause that is currently \
-included by default, and the request covers the clause's whole subject.
-   - "include": an optional clause (default excluded) that the user asks for, or that the term sheet \
-facts call for under the decision rule below.
-   - Never output an action that matches a clause's default state.
+included in the draft, and the request covers the clause's whole subject.
+   - "include": a clause that is currently excluded from the draft (usually an optional clause) that the \
+user asks for, or that the term sheet facts call for under the decision rule below.
+   - Never output an action that matches a clause's current state.
    - Decision rule (term sheet): if roof_owner is filled in and is clearly a different party from the \
 Owner (a different legal entity, not an abbreviation or spelling variant of the Owner's name), include \
 owner_representations with basis "term_sheet". If roof_owner is blank or is the Owner, do nothing.
@@ -157,8 +157,10 @@ def clause_text(c):
 def clause_digest(library):
     blocks = []
     for c in library:
-        state = "optional, excluded by default" if not c.included else "included by default"
-        blocks.append(f"[key: {c.key} | title: {c.title} | category: {c.category} | {state}]\n{clause_text(c)}")
+        state = "currently included in the draft" if c.included else "currently excluded from the draft"
+        kind = "optional clause" if c.optional else "standard clause"
+        blocks.append(f"[key: {c.key} | title: {c.title} | category: {c.category} | {kind} | {state}]\n"
+                      f"{clause_text(c)}")
     return "\n\n".join(blocks)
 
 
@@ -283,7 +285,7 @@ def validate(raw, library, haystack, assistant_text=""):
             continue
         clause = by_key[key]
         if (action == "exclude" and not clause.included) or (action == "include" and clause.included):
-            out.notes.append(f"Dropped '{action}' on '{clause.title}': already the default.")
+            out.notes.append(f"Dropped '{action}' on '{clause.title}': already in that state.")
             continue
         seen.add(key)
         out.clause_actions.append(ClauseAction(

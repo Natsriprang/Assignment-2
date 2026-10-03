@@ -7,8 +7,7 @@ import streamlit as st
 
 STEP_KEY = "draft_step"
 COUNT_KEY = "draft_step_count"
-CONFIRMED_KEY = "confirmed_interpretation"
-CONFIRMED_FIELDS = {"clause_actions", "deviations", "included", "version"}
+CALLS_KEY = "ai_calls"   # log of completed AI calls in this run, one entry per call
 
 
 @dataclass
@@ -28,13 +27,3 @@ def go_next():
 
 def go_back():
     st.session_state[STEP_KEY] = max(current() - 1, 0)
-
-
-def confirmed():
-    """The confirmed interpretation, or None. An entry left in the session by an older version of
-    the app (missing fields) is discarded instead of being read."""
-    data = st.session_state.get(CONFIRMED_KEY)
-    if data is not None and not CONFIRMED_FIELDS <= set(data):
-        del st.session_state[CONFIRMED_KEY]
-        return None
-    return data
