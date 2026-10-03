@@ -21,7 +21,7 @@ v = st.session_state.form_version  # bump this whenever ts is updated programmat
 # reusing whatever is already stored under the old key and ignoring the new `value=` argument.
 
 uploaded = st.file_uploader("Upload a filled term sheet (.xlsx)", type=["xlsx"])
-if uploaded and st.button("Parse and auto-fill the form"):
+if uploaded and st.button("Auto-fill the form"):
     parsed = parse_xlsx(uploaded)
     for f in parsed.__dataclass_fields__:
         if f == "installments":
