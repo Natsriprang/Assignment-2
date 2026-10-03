@@ -117,4 +117,5 @@ st.divider()
 missing = [f for f in REQUIRED_FIELDS if not getattr(ts, f)]
 if missing:
     st.warning(f"Required before continuing: {', '.join(missing)}")
-st.button("Continue \u2192", disabled=bool(missing), type="primary")
+if st.button("Continue \u2192", disabled=bool(missing), type="primary"):
+    st.switch_page("page_interpret.py")
