@@ -12,8 +12,13 @@ st.title("\U0001f4cb Term Sheet")
 if "term_sheet" not in st.session_state:
     st.session_state.term_sheet = TermSheet()
     st.session_state.term_sheet.installments = [Installment(number=str(i)) for i in range(1, 6)]
+if "form_version" not in st.session_state:
+    st.session_state.form_version = 0
 
 ts = st.session_state.term_sheet
+v = st.session_state.form_version  # bump this whenever ts is updated programmatically (parsing) so
+# every keyed widget below gets a brand-new key and re-initialises from ts, instead of Streamlit
+# reusing whatever is already stored under the old key and ignoring the new `value=` argument.
 
 uploaded = st.file_uploader("Upload a filled term sheet (.xlsx)", type=["xlsx"])
 if uploaded and st.button("Parse and auto-fill the form"):
@@ -25,15 +30,7 @@ if uploaded and st.button("Parse and auto-fill the form"):
         elif getattr(parsed, f):
             setattr(st.session_state.term_sheet, f, getattr(parsed, f))
 
-    # Widgets below are given explicit `key`s (needed because labels like "Company name" repeat
-    # for Owner/Contractor). Once a keyed widget has rendered, Streamlit keeps using whatever is
-    # in st.session_state[key] on every later rerun and ignores a new `value=` argument entirely --
-    # so the parsed data above would silently never reach the screen unless those stale keys are
-    # cleared first, forcing each widget to re-initialise from the freshly updated TermSheet.
-    for key in list(st.session_state.keys()):
-        if key.startswith(("own_", "con_", "inst_")):
-            del st.session_state[key]
-
+    st.session_state.form_version += 1  # see the note on `v` above
     st.success(f"Auto-filled from {uploaded.name}. Every field below is still editable.")
     st.rerun()
 
@@ -54,16 +51,16 @@ st.subheader("Parties")
 c1, c2 = st.columns(2)
 with c1:
     st.markdown("**Owner**")
-    ts.owner_name = st.text_input("Company name", ts.owner_name, key="own_name")
-    ts.owner_reg_no = st.text_input("Registration no.", ts.owner_reg_no, key="own_reg")
-    ts.owner_signatory = st.text_input("Authorised signatory", ts.owner_signatory, key="own_sig")
-    ts.owner_address = st.text_input("Registered address", ts.owner_address, key="own_addr")
+    ts.owner_name = st.text_input("Company name", ts.owner_name, key=f"own_name_{v}")
+    ts.owner_reg_no = st.text_input("Registration no.", ts.owner_reg_no, key=f"own_reg_{v}")
+    ts.owner_signatory = st.text_input("Authorised signatory", ts.owner_signatory, key=f"own_sig_{v}")
+    ts.owner_address = st.text_input("Registered address", ts.owner_address, key=f"own_addr_{v}")
 with c2:
     st.markdown("**Contractor**")
-    ts.contractor_name = st.text_input("Company name", ts.contractor_name, key="con_name")
-    ts.contractor_reg_no = st.text_input("Registration no.", ts.contractor_reg_no, key="con_reg")
-    ts.contractor_signatory = st.text_input("Authorised signatory", ts.contractor_signatory, key="con_sig")
-    ts.contractor_address = st.text_input("Registered address", ts.contractor_address, key="con_addr")
+    ts.contractor_name = st.text_input("Company name", ts.contractor_name, key=f"con_name_{v}")
+    ts.contractor_reg_no = st.text_input("Registration no.", ts.contractor_reg_no, key=f"con_reg_{v}")
+    ts.contractor_signatory = st.text_input("Authorised signatory", ts.contractor_signatory, key=f"con_sig_{v}")
+    ts.contractor_address = st.text_input("Registered address", ts.contractor_address, key=f"con_addr_{v}")
 
 st.subheader("Contract price")
 c1, c2, c3 = st.columns(3)
@@ -79,11 +76,11 @@ st.subheader("Payment installments")
 st.caption("Row count is not fixed -- add or remove rows as the deal needs.")
 for i, inst in enumerate(ts.installments):
     cols = st.columns([1, 1, 4, 3, 1])
-    inst.number = cols[0].text_input("No.", inst.number, key=f"inst_no_{i}")
-    inst.percent = cols[1].text_input("%", inst.percent, key=f"inst_pct_{i}")
-    inst.condition = cols[2].text_input("Condition", inst.condition, key=f"inst_cond_{i}")
-    inst.required_docs = cols[3].text_input("Required docs", inst.required_docs, key=f"inst_docs_{i}")
-    if cols[4].button("\u2715", key=f"inst_del_{i}"):
+    inst.number = cols[0].text_input("No.", inst.number, key=f"inst_no_{v}_{i}")
+    inst.percent = cols[1].text_input("%", inst.percent, key=f"inst_pct_{v}_{i}")
+    inst.condition = cols[2].text_input("Condition", inst.condition, key=f"inst_cond_{v}_{i}")
+    inst.required_docs = cols[3].text_input("Required docs", inst.required_docs, key=f"inst_docs_{v}_{i}")
+    if cols[4].button("\u2715", key=f"inst_del_{v}_{i}"):
         ts.installments.pop(i)
         st.rerun()
 
@@ -100,16 +97,16 @@ st.subheader("Notice contacts")
 c1, c2 = st.columns(2)
 with c1:
     st.markdown("**Owner**")
-    ts.owner_contact_name = st.text_input("Name", ts.owner_contact_name, key="own_cn")
-    ts.owner_contact_position = st.text_input("Position", ts.owner_contact_position, key="own_cp")
-    ts.owner_contact_location = st.text_input("Location", ts.owner_contact_location, key="own_cl")
-    ts.owner_contact_phone = st.text_input("Phone / email", ts.owner_contact_phone, key="own_cph")
+    ts.owner_contact_name = st.text_input("Name", ts.owner_contact_name, key=f"own_cn_{v}")
+    ts.owner_contact_position = st.text_input("Position", ts.owner_contact_position, key=f"own_cp_{v}")
+    ts.owner_contact_location = st.text_input("Location", ts.owner_contact_location, key=f"own_cl_{v}")
+    ts.owner_contact_phone = st.text_input("Phone / email", ts.owner_contact_phone, key=f"own_cph_{v}")
 with c2:
     st.markdown("**Contractor**")
-    ts.contractor_contact_name = st.text_input("Name", ts.contractor_contact_name, key="con_cn")
-    ts.contractor_contact_position = st.text_input("Position", ts.contractor_contact_position, key="con_cp")
-    ts.contractor_contact_location = st.text_input("Location", ts.contractor_contact_location, key="con_cl")
-    ts.contractor_contact_phone = st.text_input("Phone / email", ts.contractor_contact_phone, key="con_cph")
+    ts.contractor_contact_name = st.text_input("Name", ts.contractor_contact_name, key=f"con_cn_{v}")
+    ts.contractor_contact_position = st.text_input("Position", ts.contractor_contact_position, key=f"con_cp_{v}")
+    ts.contractor_contact_location = st.text_input("Location", ts.contractor_contact_location, key=f"con_cl_{v}")
+    ts.contractor_contact_phone = st.text_input("Phone / email", ts.contractor_contact_phone, key=f"con_cph_{v}")
 
 st.subheader("Comments")
 st.caption("For non-legal users: note anything you want changed from the standard draft (e.g. "

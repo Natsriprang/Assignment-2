@@ -11,6 +11,7 @@ import openpyxl
 from term_sheet_fields import Installment, TermSheet
 
 INSTALLMENT_PATTERN = re.compile(r"installment\s*(\d+)", re.IGNORECASE)
+PERCENT_PATTERN = re.compile(r"(\d+(?:\.\d+)?)\s*%")
 
 # Cell positions matching term_sheet_template_EN.xlsx's layout (column B = label, column C = value).
 FIELD_CELLS = {
@@ -65,17 +66,22 @@ def parse_xlsx(file) -> TermSheet:
     installments = {}
     for row in ws.iter_rows():
         for cell in row:
-            if cell.column_letter != "B" or not isinstance(cell.value, str):
+            # column 2 == "B". Checked by number, not `.column_letter`, because a merged cell
+            # (other than its top-left anchor) is a MergedCell object that lacks that attribute.
+            if cell.column != 2 or not isinstance(cell.value, str):
                 continue
             m = INSTALLMENT_PATTERN.search(cell.value)
             if not m:
                 continue
             number = m.group(1)
+            # The % is written inside this same label cell, e.g. "Installment 1 (10%)", not in its
+            # own column -- so it has to be pulled out of cell.value itself, not a separate cell.
+            pct_match = PERCENT_PATTERN.search(cell.value)
             condition_cell = ws.cell(row=cell.row, column=3)
             docs_cell = ws.cell(row=cell.row, column=4)
             installments[number] = Installment(
                 number=number,
-                percent="",
+                percent=pct_match.group(1) if pct_match else "",
                 condition=_clean(condition_cell.value),
                 required_docs=_clean(docs_cell.value),
             )
