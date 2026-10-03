@@ -9,8 +9,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from core.clause_data import build_library
-from ai.interpret import (context_summary, interpret_request, resolve_included, result_lines,
-                       term_sheet_warnings, validate)
+from ai.interpret import (candidate_question, context_summary, interpret_request, resolve_included,
+                          result_lines, term_sheet_warnings, validate)
 from core.renumber import renumber_and_render
 from core.term_sheet_fields import Installment, TermSheet
 
@@ -336,6 +336,23 @@ def test_result_lines_and_context_summary():
     assert uncovered == ["Not covered by the clause library: add a warranty clause"]
     summary = context_summary(result, lib)
     assert summary.count("\n") == 4 and "Is that what you meant?" in summary
+
+
+def test_ambiguity_that_only_repeats_the_request_is_dropped():
+    raw = empty(ambiguities=["I want to increase the interest rate to 1.00%",
+                             "Is 1.00% per day or per year?"])
+    result = validate(raw, build_library(), "I want to increase the interest rate to 1.00%")
+    assert result.ambiguities == ["Is 1.00% per day or per year?"]
+    assert any("repeated the request" in n for n in result.notes)
+
+
+def test_candidate_question_text():
+    item = validate(empty(unmapped_requests=[unmapped(key="completion_deadline", quote=LD_QUOTE,
+                                                      evidence="default interest")]),
+                    build_library(), "default interest").unmapped_requests[0]
+    text = candidate_question(item, "Completion Deadline")
+    assert text.startswith("You wrote \u201cdefault interest\u201d") and "'Completion Deadline'" in text
+    assert text.endswith("Is that what you meant?")
 
 
 def test_context_summary_when_nothing_found():

@@ -117,7 +117,8 @@ an empty string.
 confidence. If the request itself can be read in opposite ways (for example "drop reduce X" could mean \
 remove X or lower X), record an ambiguity and make no deviation or action for it. If a figure the user \
 gives could be on a different basis from the clause (for example per year, where the clause is per day), \
-record an ambiguity asking which basis they mean. Do not guess: if you are unsure whether a request means dropping a whole clause or changing part of \
+record an ambiguity asking which basis they mean. Write every ambiguity as a short question addressed \
+to the user (for example "Is 1.00% per day or per year?"); never restate the user's request. Do not guess: if you are unsure whether a request means dropping a whole clause or changing part of \
 it, record a deviation and an ambiguity, not an exclusion.
 
 4. unmapped_requests -- requests that concern no provision in the library (for example, a new clause \
@@ -252,7 +253,14 @@ def validate(raw, library, haystack, assistant_text=""):
     `assistant_text` is the assistant's earlier replies; it only proves a question was asked."""
     by_key = {c.key: c for c in library}
     haystack = _norm(haystack)
-    out = Interpretation(ambiguities=[a for a in raw.get("ambiguities", []) if a.strip()])
+    out = Interpretation()
+    for a in raw.get("ambiguities", []):
+        if not a.strip():
+            continue
+        if _norm(a) in haystack:
+            out.notes.append("Dropped an ambiguity that only repeated the request.")
+            continue
+        out.ambiguities.append(a)
 
     def verified(evidence):
         return bool(_norm(evidence)) and _norm(evidence) in haystack
@@ -333,6 +341,13 @@ def validate(raw, library, haystack, assistant_text=""):
     return out
 
 
+def candidate_question(item, title):
+    """The question put to the user about a candidate provision."""
+    return (f"You wrote \u201c{item.evidence or item.request}\u201d. No clause uses that term. "
+            f"The closest provision is '{title}': \u201c{item.candidate_quote}\u201d. "
+            "Is that what you meant?")
+
+
 def result_lines(result, library):
     """Plain-text lines for (proposals, questions, uncovered requests). Also used as the assistant's
     side of the conversation, so the model can tell what the user is answering."""
@@ -347,10 +362,7 @@ def result_lines(result, library):
     uncovered = []
     for u in result.unmapped_requests:
         if u.candidate_key:
-            questions.append(
-                f"Question: You wrote \u201c{u.evidence or u.request}\u201d. No clause uses that term. "
-                f"The closest provision is '{titles[u.candidate_key]}': \u201c{u.candidate_quote}\u201d. "
-                "Is that what you meant?")
+            questions.append(f"Question: {candidate_question(u, titles[u.candidate_key])}")
         else:
             uncovered.append(f"Not covered by the clause library: {u.request}")
     return proposals, questions, uncovered
