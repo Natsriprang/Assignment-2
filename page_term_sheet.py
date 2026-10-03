@@ -108,11 +108,6 @@ with c2:
     ts.contractor_contact_location = st.text_input("Location", ts.contractor_contact_location, key=f"con_cl_{v}")
     ts.contractor_contact_phone = st.text_input("Phone / email", ts.contractor_contact_phone, key=f"con_cph_{v}")
 
-st.subheader("Comments")
-st.caption("Note anything you want changed from the standard draft (e.g. "
-           "\"client wants to drop the construction timeline\")")
-ts.comment = st.text_area("Comment", ts.comment, label_visibility="collapsed")
-
 st.divider()
 missing = [f for f in REQUIRED_FIELDS if not getattr(ts, f)]
 if missing:

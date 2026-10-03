@@ -48,7 +48,6 @@ class TermSheet:
     contractor_contact_location: str = ""
     contractor_contact_phone: str = ""
 
-    comment: str = ""
 
 
 REQUIRED_FIELDS = [

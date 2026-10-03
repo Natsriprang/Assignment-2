@@ -5,19 +5,22 @@ import sys
 from types import SimpleNamespace
 
 from clause_data import build_library
-from interpret import (Interpretation, interpret_request, resolve_included, term_sheet_warnings,
-                       validate)
+from interpret import (context_summary, interpret_request, resolve_included, result_lines,
+                       term_sheet_warnings, validate)
 from renumber import renumber_and_render
 from term_sheet_fields import Installment, TermSheet
 
 
-def sample_term_sheet(comment="", roof_owner="", owner="Solar Owner Co., Ltd."):
+def user(*texts):
+    return [{"role": "user", "content": t} for t in texts]
+
+
+def sample_term_sheet(roof_owner="", owner="Solar Owner Co., Ltd."):
     return TermSheet(
         project_name="Rooftop PV Project", project_location="Bangkok", capacity="500",
         owner_name=owner, contractor_name="Sun Build Co., Ltd.", roof_owner=roof_owner,
         contract_price_number="10,000,000", start_date="1 Nov 2026", completion_date="1 Apr 2027",
-        installments=[Installment("1", "30"), Installment("2", "30"), Installment("3", "40")],
-        comment=comment)
+        installments=[Installment("1", "30"), Installment("2", "30"), Installment("3", "40")])
 
 
 class FakeClient:
@@ -44,11 +47,11 @@ def action(key, act, evidence, basis="comment", reason="r"):
 
 
 def test_valid_exclude_applies_and_renumbers():
-    comment = "client wants to drop the construction timeline"
-    ts = sample_term_sheet(comment)
+    ts = sample_term_sheet()
     client = FakeClient(empty(clause_actions=[
         action("completion_deadline", "exclude", "drop the construction timeline")]))
-    result = interpret_request(ts, build_library(), client)
+    result = interpret_request(ts, build_library(), client,
+                               conversation=user("client wants to drop the construction timeline"))
     assert len(result.clause_actions) == 1 and result.clause_actions[0].evidence_verified
 
     lib = build_library()
@@ -112,20 +115,106 @@ def test_term_sheet_rule_action_verified_against_term_sheet():
     ts = sample_term_sheet(roof_owner="Green Land Co., Ltd.")
     client = FakeClient(empty(clause_actions=[
         action("owner_representations", "include", "Green Land Co., Ltd.", basis="term_sheet")]))
-    result = interpret_request(ts, build_library(), client)
+    result = interpret_request(ts, build_library(), client, conversation=[])
     assert result.clause_actions[0].evidence_verified is True
     included = resolve_included(build_library(), result.clause_actions)
     assert included["owner_representations"] is True
 
 
-def test_deviation_kept_and_unknown_deviation_dropped():
-    lib = build_library()
-    raw = empty(deviations=[
-        {"clause_key": "completion_deadline", "summary": "LD rate", "requested_change": "0.03%/day",
-         "evidence": "x"},
-        {"clause_key": "nope", "summary": "s", "requested_change": "c", "evidence": "x"}])
-    result = validate(raw, lib, "x")
-    assert len(result.deviations) == 1 and len(result.notes) == 1
+def dev(key, quote, change_type="modify", change="c", evidence="x", term="liquidated damages",
+        match="same_term", relation=""):
+    return {"clause_key": key, "summary": "s", "requested_change": change,
+            "change_type": change_type, "provision_quote": quote, "request_term": term,
+            "term_match": match, "relation": relation, "evidence": evidence}
+
+
+LD_QUOTE = "at the rate of 0.05 (zero point zero five) percent of the Contract Price per day"
+
+
+def test_deviation_with_real_provision_kept():
+    result = validate(empty(deviations=[dev("completion_deadline", LD_QUOTE)]), build_library(), "x")
+    assert len(result.deviations) == 1 and not result.unmapped_requests
+
+
+def test_deviation_on_missing_provision_moved_to_unmapped():
+    raw = empty(deviations=[dev("price_payment", "default interest rate",
+                                change="reduce the default interest rate")])
+    result = validate(raw, build_library(), "x")
+    assert not result.deviations
+    assert "default interest rate" in result.unmapped_requests[0].request and result.notes
+
+
+def test_deviation_with_empty_quote_moved_to_unmapped():
+    result = validate(empty(deviations=[dev("price_payment", "")]), build_library(), "x")
+    assert not result.deviations and len(result.unmapped_requests) == 1
+
+
+def test_add_deviation_needs_no_quote():
+    result = validate(empty(deviations=[dev("price_payment", "", change_type="add")]), build_library(), "x")
+    assert len(result.deviations) == 1 and result.deviations[0].change_type == "add"
+
+
+def test_provision_quote_check_ignores_case_and_whitespace():
+    quote = "AT THE RATE of 0.05   (zero point zero five) percent"
+    result = validate(empty(deviations=[dev("completion_deadline", quote)]), build_library(), "x")
+    assert len(result.deviations) == 1
+
+
+def test_quote_must_be_in_the_named_clause():
+    result = validate(empty(deviations=[dev("price_payment", LD_QUOTE)]), build_library(), "x")
+    assert not result.deviations and result.unmapped_requests
+
+
+def test_unknown_deviation_clause_dropped():
+    result = validate(empty(deviations=[dev("nope", "x")]), build_library(), "x")
+    assert not result.deviations and len(result.notes) == 1
+
+
+def unmapped(request="reduce default interest", key="none", quote="", change="", evidence="x"):
+    return {"request": request, "evidence": evidence, "candidate_clause_key": key,
+            "candidate_provision_quote": quote, "why_related": "both set a charge for lateness",
+            "candidate_change": change}
+
+
+def test_candidate_kept_when_quote_is_in_clause():
+    raw = empty(unmapped_requests=[unmapped(key="completion_deadline", quote=LD_QUOTE,
+                                            change="Reduce the liquidated damages rate")])
+    item = validate(raw, build_library(), "x").unmapped_requests[0]
+    assert item.candidate_key == "completion_deadline" and item.candidate_quote == LD_QUOTE
+    assert item.candidate_change == "Reduce the liquidated damages rate" and item.why_related
+
+
+def test_candidate_dropped_when_quote_not_in_clause():
+    raw = empty(unmapped_requests=[unmapped(key="price_payment", quote=LD_QUOTE)])
+    result = validate(raw, build_library(), "x")
+    assert result.unmapped_requests[0].candidate_key == "" and result.notes
+
+
+def test_candidate_none_and_unknown_key():
+    raw = empty(unmapped_requests=[unmapped(), unmapped(key="made_up", quote="x")])
+    result = validate(raw, build_library(), "x")
+    assert [u.candidate_key for u in result.unmapped_requests] == ["", ""]
+
+
+def test_empty_unmapped_request_skipped():
+    assert not validate(empty(unmapped_requests=[unmapped(request="  ")]), build_library(), "x").unmapped_requests
+
+
+def test_schema_allows_none_candidate():
+    client = FakeClient(empty())
+    interpret_request(sample_term_sheet(), build_library(), client)
+    schema = client.last_kwargs["response_format"]["json_schema"]["schema"]
+    props = schema["properties"]["unmapped_requests"]["items"]["properties"]
+    assert "none" in props["candidate_clause_key"]["enum"]
+    assert set(schema["properties"]["unmapped_requests"]["items"]["required"]) == set(props)
+
+
+def test_prompt_includes_full_clause_text():
+    client = FakeClient(empty())
+    interpret_request(sample_term_sheet(), build_library(), client)
+    user = client.last_kwargs["messages"][1]["content"]
+    assert "not more than 5 (five) percent of the Contract Price" in user
+    assert "Payable upon completion of installation of the inverter" in user
 
 
 def test_schema_enforces_clause_keys():
@@ -136,17 +225,117 @@ def test_schema_enforces_clause_keys():
     assert set(enum) == {c.key for c in build_library()}
 
 
-def test_prompt_contains_comment_and_library():
+def test_prompt_contains_conversation_and_library():
     client = FakeClient(empty())
-    interpret_request(sample_term_sheet("please drop X"), build_library(), client, clarification="by X I mean Y")
-    user = client.last_kwargs["messages"][1]["content"]
-    assert "please drop X" in user and "key: completion_deadline" in user and "by X I mean Y" in user
+    convo = [{"role": "user", "content": "please drop X"},
+             {"role": "assistant", "content": "Question: did you mean Z?"},
+             {"role": "user", "content": "yes, Z"}]
+    interpret_request(sample_term_sheet(), build_library(), client, conversation=convo)
+    content = client.last_kwargs["messages"][1]["content"]
+    assert "User: please drop X" in content and "Assistant: Question: did you mean Z?" in content
+    assert "User: yes, Z" in content and "key: completion_deadline" in content
 
 
-def test_empty_comment_sent_as_none():
+def test_empty_conversation_sent_as_no_messages():
     client = FakeClient(empty())
-    interpret_request(sample_term_sheet(""), build_library(), client)
-    assert "(none)" in client.last_kwargs["messages"][1]["content"]
+    interpret_request(sample_term_sheet(), build_library(), client)
+    assert "(no messages)" in client.last_kwargs["messages"][1]["content"]
+
+
+def test_evidence_from_assistant_turn_is_not_verified():
+    convo = [{"role": "user", "content": "tighten things up"},
+             {"role": "assistant", "content": "Proposed: remove clause 'Suspension of Works'."}]
+    client = FakeClient(empty(clause_actions=[action("suspension", "exclude", "remove clause 'Suspension")]))
+    result = interpret_request(sample_term_sheet(), build_library(), client, conversation=convo)
+    assert result.clause_actions[0].evidence_verified is False
+
+
+def test_evidence_from_later_user_turn_is_verified():
+    convo = user("something vague", "I mean drop suspension of works")
+    client = FakeClient(empty(clause_actions=[action("suspension", "exclude", "drop suspension of works")]))
+    result = interpret_request(sample_term_sheet(), build_library(), client, conversation=convo)
+    assert result.clause_actions[0].evidence_verified is True
+
+
+def asked_convo():
+    """User asks, assistant asks whether the user means liquidated damages, user says yes."""
+    return [{"role": "user", "content": "client wants to reduce default interest"},
+            {"role": "assistant", "content": "Question: The closest provision is 'Completion Deadline'. "
+                                             "Is that what you meant?"},
+            {"role": "user", "content": "Yes, that is what I meant."}]
+
+
+def confirmed_dev(**overrides):
+    args = dict(change="Reduce the liquidated damages rate", evidence="reduce default interest",
+                term="default interest", match="confirmed_by_user")
+    args.update(overrides)
+    return dev("completion_deadline", LD_QUOTE, **args)
+
+
+def test_confirmed_candidate_comes_back_as_deviation():
+    client = FakeClient(empty(deviations=[confirmed_dev()]))
+    result = interpret_request(sample_term_sheet(), build_library(), client, conversation=asked_convo())
+    assert len(result.deviations) == 1 and result.deviations[0].evidence_verified
+
+
+def test_confirmed_by_user_needs_a_prior_question():
+    convo = user("client wants to reduce default interest", "yes")
+    client = FakeClient(empty(deviations=[confirmed_dev()]))
+    result = interpret_request(sample_term_sheet(), build_library(), client, conversation=convo)
+    assert not result.deviations and result.unmapped_requests[0].candidate_key == "completion_deadline"
+
+
+def test_silent_reinterpretation_becomes_a_question():
+    raw = empty(deviations=[dev("completion_deadline", LD_QUOTE, term="default interest rate",
+                                change="Reduce the default interest rate to 0.01%",
+                                evidence="reduce the default interest rate")])
+    result = validate(raw, build_library(), "reduce the default interest rate to 0.01%")
+    assert not result.deviations
+    item = result.unmapped_requests[0]
+    assert item.candidate_key == "completion_deadline" and item.candidate_quote == LD_QUOTE
+    assert item.candidate_change == "Reduce the default interest rate to 0.01%" and result.notes
+
+
+def test_model_admitting_a_different_term_becomes_a_question():
+    raw = empty(deviations=[dev("completion_deadline", LD_QUOTE, match="different_term",
+                                relation="both set a charge for lateness")])
+    result = validate(raw, build_library(), "x")
+    assert not result.deviations and result.unmapped_requests[0].why_related.startswith("both")
+
+
+def test_term_check_uses_stems_and_skips_generic_words():
+    lib = build_library()
+    gov = "This Agreement shall be governed by and interpreted in accordance with the laws of Thailand"
+    kept = validate(empty(deviations=[dev("miscellaneous", gov, term="governing law")]), lib, "x")
+    assert len(kept.deviations) == 1
+    generic = validate(empty(deviations=[dev("completion_deadline", LD_QUOTE, term="the rate")]), lib, "x")
+    assert len(generic.deviations) == 1
+
+
+def test_add_deviation_skips_term_check():
+    raw = empty(deviations=[dev("price_payment", "", change_type="add", term="late payment interest")])
+    assert len(validate(raw, build_library(), "x").deviations) == 1
+
+
+def test_result_lines_and_context_summary():
+    lib = build_library()
+    raw = empty(
+        clause_actions=[action("suspension", "exclude", "x")],
+        deviations=[dev("completion_deadline", LD_QUOTE, change="lower the rate")],
+        ambiguities=["What does 'it' refer to?"],
+        unmapped_requests=[unmapped(key="completion_deadline", quote=LD_QUOTE, evidence="default interest"),
+                           unmapped(request="add a warranty clause")])
+    result = validate(raw, lib, "x")
+    proposals, questions, uncovered = result_lines(result, lib)
+    assert len(proposals) == 2 and "Suspension of Works" in proposals[0]
+    assert len(questions) == 2 and "Completion Deadline" in questions[1] and "default interest" in questions[1]
+    assert uncovered == ["Not covered by the clause library: add a warranty clause"]
+    summary = context_summary(result, lib)
+    assert summary.count("\n") == 4 and "Is that what you meant?" in summary
+
+
+def test_context_summary_when_nothing_found():
+    assert "No changes" in context_summary(validate(empty(), build_library(), "x"), build_library())
 
 
 def test_refusal_and_truncation_raise():
@@ -175,13 +364,32 @@ def test_resolve_included_defaults():
 
 
 LIVE_CASES = [
-    ("A. drop timeline", sample_term_sheet("client wants to drop the construction timeline")),
-    ("B. third-party roof owner", sample_term_sheet(roof_owner="Green Land Co., Ltd.")),
-    ("C. mixed, Thai", sample_term_sheet(
+    ("A. drop timeline", sample_term_sheet(), user("client wants to drop the construction timeline")),
+    ("B. third-party roof owner", sample_term_sheet(roof_owner="Green Land Co., Ltd."), []),
+    ("C. mixed, Thai", sample_term_sheet(), user(
         "ลูกค้าขอลดค่าปรับล่าช้าเหลือ 0.03% ต่อวัน และไม่ต้องการข้อ confidentiality")),
-    ("D. vague + unmappable", sample_term_sheet("make it more balanced and add a 5-year warranty clause")),
-    ("E. empty comment", sample_term_sheet("")),
+    ("D. vague + unmappable", sample_term_sheet(), user("make it more balanced and add a 5-year warranty clause")),
+    ("E. empty conversation", sample_term_sheet(), []),
+    ("F. wrong term (expect liquidated damages as candidate)", sample_term_sheet(),
+     user("Client wants to reduce the default interest rate to 0.01%")),
+    ("G. garbled request", sample_term_sheet(), user("client wants to drop reduce the default interest rate")),
 ]
+
+
+def show(result):
+    for a in result.clause_actions:
+        print(f"  ACTION   {a.action} {a.clause_key} (verified={a.evidence_verified}) <- {a.evidence!r}")
+    for d in result.deviations:
+        print(f"  DEVIATE  {d.clause_key} [{d.change_type}]: {d.requested_change} "
+              f"(quote={d.provision_quote!r}, verified={d.evidence_verified})")
+    for a in result.ambiguities:
+        print(f"  AMBIG    {a}")
+    for u in result.unmapped_requests:
+        print(f"  UNMAPPED {u.request}")
+        if u.candidate_key:
+            print(f"           candidate: {u.candidate_key} <- {u.candidate_quote!r}")
+    for n in result.notes:
+        print(f"  NOTE     {n}")
 
 
 def run_live():
@@ -189,19 +397,18 @@ def run_live():
     client = get_client()
     if client is None:
         sys.exit("Set OPENAI_API_KEY (or put it in .env) to run live cases.")
-    for name, ts in LIVE_CASES:
+    lib = build_library()
+    for name, ts, convo in LIVE_CASES:
         print(f"\n=== {name} ===")
-        result = interpret_request(ts, build_library(), client)
-        for a in result.clause_actions:
-            print(f"  ACTION   {a.action} {a.clause_key} (verified={a.evidence_verified}) <- {a.evidence!r}")
-        for d in result.deviations:
-            print(f"  DEVIATE  {d.clause_key}: {d.requested_change} (verified={d.evidence_verified})")
-        for a in result.ambiguities:
-            print(f"  AMBIG    {a}")
-        for u in result.unmapped_requests:
-            print(f"  UNMAPPED {u}")
-        for n in result.notes:
-            print(f"  NOTE     {n}")
+        show(interpret_request(ts, lib, client, conversation=convo))
+
+    print("\n=== H. two turns: candidate, then the user confirms ===")
+    ts, convo = sample_term_sheet(), user("Client wants to reduce the default interest rate to 0.01%")
+    first = interpret_request(ts, lib, client, conversation=convo)
+    show(first)
+    convo += [{"role": "assistant", "content": context_summary(first, lib)}] + user("Yes, that is what I meant.")
+    print("  --- after the user says yes ---")
+    show(interpret_request(ts, lib, client, conversation=convo))
 
 
 if __name__ == "__main__":

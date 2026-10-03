@@ -1,4 +1,3 @@
-"""The clause library, encoded from CA_EN_merged.docx."""
 from clauses import Clause, Item
 
 
