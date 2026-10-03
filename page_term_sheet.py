@@ -73,7 +73,7 @@ ts.vat_treatment = c3.selectbox(
 )
 
 st.subheader("Payment installments")
-st.caption("Row count is not fixed -- add or remove rows as the deal needs.")
+st.caption("Add or remove as installments.")
 for i, inst in enumerate(ts.installments):
     cols = st.columns([1, 1, 4, 3, 1])
     inst.number = cols[0].text_input("No.", inst.number, key=f"inst_no_{v}_{i}")
@@ -109,8 +109,8 @@ with c2:
     ts.contractor_contact_phone = st.text_input("Phone / email", ts.contractor_contact_phone, key=f"con_cph_{v}")
 
 st.subheader("Comments")
-st.caption("For non-legal users: note anything you want changed from the standard draft (e.g. "
-           "\"client wants to drop the construction timeline\") -- this is reviewed before drafting.")
+st.caption("Note anything you want changed from the standard draft (e.g. "
+           "\"client wants to drop the construction timeline\")")
 ts.comment = st.text_area("Comment", ts.comment, label_visibility="collapsed")
 
 st.divider()
