@@ -6,11 +6,11 @@ import re
 
 import streamlit as st
 
-from clause_data import build_library
-from interpret import (InterpretationError, context_summary, interpret_request, resolve_included,
+from core.clause_data import build_library
+from ai.interpret import (InterpretationError, context_summary, interpret_request, resolve_included,
                        result_lines, term_sheet_text, term_sheet_warnings)
-from llm import MODEL, get_client
-from term_sheet_fields import REQUIRED_FIELDS
+from ai.llm import MODEL, get_client
+from core.term_sheet_fields import REQUIRED_FIELDS
 
 st.title("\U0001f50e Interpret Request")
 st.caption("Tell the assistant what you want changed from the standard contract. It proposes changes "
@@ -34,7 +34,7 @@ ts = st.session_state.get("term_sheet")
 missing = [f for f in REQUIRED_FIELDS if ts is None or not getattr(ts, f)]
 if missing:
     st.warning("Complete the required term sheet fields first.")
-    st.page_link("page_term_sheet.py", label="Go to Term Sheet", icon="\U0001f4cb")
+    st.page_link("views/term_sheet.py", label="Go to Term Sheet", icon="\U0001f4cb")
     st.stop()
 
 # Temporary key input; Phase 8 replaces this with the shared credentials module.
@@ -209,4 +209,4 @@ if latest is not None:
     if confirmed:
         st.success(f"Applied. The draft now has {confirmed['n_clauses']} clauses and "
                    f"{len(confirmed['deviations'])} wording change(s) carried forward.")
-        st.page_link("page_sandbox.py", label="View the result in Clause Sandbox", icon="\U0001f9f0")
+        st.page_link("views/sandbox.py", label="View the result in Clause Sandbox", icon="\U0001f9f0")

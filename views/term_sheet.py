@@ -4,8 +4,8 @@ from whatever the term sheet actually contains, with add/remove controls for man
 The Continue button is disabled until every required field is filled (validation gate, no AI)."""
 import streamlit as st
 
-from term_sheet_fields import TermSheet, Installment, REQUIRED_FIELDS
-from xlsx_parser import parse_xlsx
+from core.term_sheet_fields import TermSheet, Installment, REQUIRED_FIELDS
+from core.xlsx_parser import parse_xlsx
 
 st.title("\U0001f4cb Term Sheet")
 
@@ -113,4 +113,4 @@ missing = [f for f in REQUIRED_FIELDS if not getattr(ts, f)]
 if missing:
     st.warning(f"Required before continuing: {', '.join(missing)}")
 if st.button("Continue \u2192", disabled=bool(missing), type="primary"):
-    st.switch_page("page_interpret.py")
+    st.switch_page("views/interpret.py")

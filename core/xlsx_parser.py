@@ -8,7 +8,7 @@ import re
 
 import openpyxl
 
-from term_sheet_fields import Installment, TermSheet
+from core.term_sheet_fields import Installment, TermSheet
 
 INSTALLMENT_PATTERN = re.compile(r"installment\s*(\d+)", re.IGNORECASE)
 PERCENT_PATTERN = re.compile(r"(\d+(?:\.\d+)?)\s*%")

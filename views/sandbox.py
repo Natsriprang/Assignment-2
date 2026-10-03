@@ -4,10 +4,10 @@ import re
 
 import streamlit as st
 
-from clause_data import build_library
-from clauses import cross_reference_scan
-from renumber import renumber_and_render
-from render import render_docx
+from core.clause_data import build_library
+from core.clauses import cross_reference_scan
+from core.renumber import renumber_and_render
+from core.render import render_docx
 
 
 def plain(text):

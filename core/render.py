@@ -3,7 +3,7 @@ from docx import Document
 from docx.shared import Pt, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
-from renumber import renumber_and_render
+from core.renumber import renumber_and_render
 
 
 def _add_table(doc, table_data):

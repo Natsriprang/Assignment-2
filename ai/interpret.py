@@ -9,7 +9,7 @@ import json
 import re
 from dataclasses import dataclass, field
 
-from llm import MODEL
+from ai.llm import MODEL
 
 
 class InterpretationError(Exception):

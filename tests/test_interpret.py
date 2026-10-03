@@ -4,11 +4,15 @@ import json
 import sys
 from types import SimpleNamespace
 
-from clause_data import build_library
-from interpret import (context_summary, interpret_request, resolve_included, result_lines,
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from core.clause_data import build_library
+from ai.interpret import (context_summary, interpret_request, resolve_included, result_lines,
                        term_sheet_warnings, validate)
-from renumber import renumber_and_render
-from term_sheet_fields import Installment, TermSheet
+from core.renumber import renumber_and_render
+from core.term_sheet_fields import Installment, TermSheet
 
 
 def user(*texts):
@@ -393,7 +397,7 @@ def show(result):
 
 
 def run_live():
-    from llm import get_client
+    from ai.llm import get_client
     client = get_client()
     if client is None:
         sys.exit("Set OPENAI_API_KEY (or put it in .env) to run live cases.")

@@ -1,4 +1,4 @@
-from clauses import Clause, Item
+from core.clauses import Clause, Item
 
 
 def build_library():
