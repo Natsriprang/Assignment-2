@@ -73,7 +73,7 @@ ts.vat_treatment = c3.selectbox(
 )
 
 st.subheader("Payment installments")
-st.caption("Add or remove as installments.")
+st.caption("Add or remove installments.")
 for i, inst in enumerate(ts.installments):
     cols = st.columns([1, 1, 4, 3, 1])
     inst.number = cols[0].text_input("No.", inst.number, key=f"inst_no_{v}_{i}")
