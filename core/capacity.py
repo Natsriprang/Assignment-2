@@ -1,5 +1,5 @@
-"""Installed capacity with its unit (kWp or MW), and exact conversion between them. The contract header uses
-MW and clause 1 uses kWp, so the unit has to be known rather than guessed."""
+"""Installed capacity with its unit (kWp or MW), kept exactly as the user entered it. The unit is chosen on the
+term sheet rather than guessed."""
 import re
 from decimal import Decimal, InvalidOperation
 
@@ -31,11 +31,7 @@ def parse_capacity(text, default_unit="kWp"):
     return (value if value.is_finite() and value > 0 else None), unit
 
 
-def capacity_in(term_sheet, unit):
-    """The capacity as plain text in `unit` ('kWp' or 'MW'), or None when it cannot be read."""
-    value, own_unit = parse_capacity(getattr(term_sheet, "capacity", ""), getattr(term_sheet, "capacity_unit", "kWp"))
-    if value is None:
-        return None
-    if own_unit == unit:
-        return format_number(value)
-    return format_number(value / 1000 if unit == "MW" else value * 1000)
+def capacity_parts(term_sheet):
+    """(number as plain text or None, unit), exactly as entered on the term sheet. No unit conversion."""
+    value, unit = parse_capacity(getattr(term_sheet, "capacity", ""), getattr(term_sheet, "capacity_unit", "kWp"))
+    return (format_number(value) if value is not None else None), unit

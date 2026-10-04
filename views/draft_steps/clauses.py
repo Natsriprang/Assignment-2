@@ -16,6 +16,7 @@ from ai.references import select_references
 from core.clause_data import build_library
 from core.draft_state import library_for
 from core.figures import numbers_in
+from core.placement import placement_from_references
 from core.reference_library import load_references
 from core.term_sheet_fields import REQUIRED_FIELDS
 from views import clause_sandbox
@@ -141,7 +142,7 @@ def render_draft(entry_id, drafted, clauses):
     placement = st.selectbox("Place this clause before", options, key=pk,
                              format_func=lambda k: "At the end" if k == "end" else titles[k])
     if drafted.placement_reason:
-        st.caption(plain(f"Suggested by the AI: {drafted.placement_reason}"))
+        st.caption(plain(f"Suggestion: {drafted.placement_reason}"))
     kept = st.checkbox("Keep this draft for the next step", value=drafts.is_kept(entry_id), key=drafts.keep_key(entry_id))
     drafts.remember(entry_id, kept, placement)
 
@@ -353,8 +354,10 @@ def render():
                     selection = select_references(request_text, refs,
                                                   CountingClient(client, calls, "select_references"), MODEL)
                     order = [(c.key, c.title) for c in clauses.values() if c.included]
+                    hint = placement_from_references([refs[i] for i in selection.ids()],
+                                                     [(c.key, c.title, c.included) for c in clauses.values()])
                     drafted = draft_clause(request_text, selection, refs,
-                                           CountingClient(client, calls, "draft_clause"), MODEL, order)
+                                           CountingClient(client, calls, "draft_clause"), MODEL, order, hint)
                 except (AIStepError, FileNotFoundError) as e:
                     error = str(e)
                 except Exception as e:

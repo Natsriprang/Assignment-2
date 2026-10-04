@@ -90,7 +90,7 @@ def default_placement(keys):
     return "end"
 
 
-def validate_draft(request, raw, selection, refs, clause_order=()):
+def validate_draft(request, raw, selection, refs, clause_order=(), placement_hint=None):
     sentences = [s.strip() for s in raw.get("sentences", []) if s.strip()]
     if not sentences:
         raise AIStepError("The model returned an empty clause; try again.")
@@ -99,7 +99,9 @@ def validate_draft(request, raw, selection, refs, clause_order=()):
     keys = [key for key, _ in clause_order]
     placement = raw.get("placement") or {}
     before, reason = placement.get("before"), (placement.get("reason") or "").strip()
-    if before != "end" and before not in keys:
+    if placement_hint:                                  # the references' own position beats the model's guess
+        before, reason = placement_hint
+    elif before != "end" and before not in keys:
         before, reason = default_placement(keys), ""
         notes.append("The suggested position did not match a clause in the draft, so the clause was placed "
                      "before the closing clauses. Choose another position if you prefer.")
@@ -107,9 +109,9 @@ def validate_draft(request, raw, selection, refs, clause_order=()):
                          before, reason)
 
 
-def draft_clause(request, selection, refs, client, model=MODEL, clause_order=()):
+def draft_clause(request, selection, refs, client, model=MODEL, clause_order=(), placement_hint=None):
     """`clause_order` is [(key, title)] for the clauses now in the draft, in order; the AI suggests where the new
     clause should go among them."""
     raw = structured_call(client, model, DRAFT_PROMPT, build_prompt(request, selection, refs, clause_order),
                           "clause_draft", draft_schema([key for key, _ in clause_order]))
-    return validate_draft(request, raw, selection, refs, clause_order)
+    return validate_draft(request, raw, selection, refs, clause_order, placement_hint)

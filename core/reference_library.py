@@ -30,6 +30,7 @@ class Reference:
     governing_law: str
     machine_translated: bool
     caveats: tuple
+    before_clause: str | None = None     # key of our clause that follows this one in its own contract, if any
 
     @property
     def flags(self):
@@ -60,15 +61,15 @@ def load_references(directory=DATA_DIR):
     for path in files:
         doc = json.loads(path.read_text(encoding="utf-8"))
         source = SOURCE_LABELS.get(doc["id"], doc["title"][:40])
-        for c in doc["clauses"]:
-            if c["category"] == "preamble":
-                continue
+        entries = [c for c in doc["clauses"] if c["category"] != "preamble"]
+        for position, c in enumerate(entries):
+            following = next((x["our_clause"] for x in entries[position + 1:] if x.get("our_clause")), None)
             refs[c["id"]] = Reference(
                 id=c["id"], doc_id=doc["id"], source=source, article=c["article"], title=c["title"],
                 category=c["category"], our_clause=c.get("our_clause"), gap=bool(c["gap"]),
                 quality_notes=tuple(c["quality_notes"]), text=c["text"], rights_note=doc.get("rights_note", ""),
                 governing_law=doc.get("governing_law", ""), machine_translated="translation" in doc,
-                caveats=tuple(doc.get("differences_from_target", [])))
+                caveats=tuple(doc.get("differences_from_target", [])), before_clause=following)
     return refs
 
 

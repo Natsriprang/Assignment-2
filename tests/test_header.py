@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import openpyxl
 from docx import Document
 
-from core.capacity import capacity_in, parse_capacity
+from core.capacity import capacity_parts, parse_capacity
 from core.clause_data import build_library
 from core.draft_state import library_for
 from core.header import TITLE, build_header
@@ -51,17 +51,16 @@ def test_the_default_unit_applies_only_when_the_text_has_none():
     assert parse_capacity("500", "bogus")[1] == "kWp"
 
 
-def test_conversion_is_exact_in_both_directions():
-    kwp = lambda cap, unit="kWp": capacity_in(SimpleNamespace(capacity=cap, capacity_unit=unit), "kWp")
-    mw = lambda cap, unit="kWp": capacity_in(SimpleNamespace(capacity=cap, capacity_unit=unit), "MW")
-    assert mw("500") == "0.5" and mw("1250") == "1.25" and mw("333") == "0.333" and mw("500.00") == "0.5"
-    assert kwp("0.5", "MW") == "500" and kwp("1.25", "MW") == "1250" and kwp("500") == "500" and mw("0.5", "MW") == "0.5"
-    assert kwp("abc") is None and mw("") is None
+def test_capacity_is_shown_exactly_as_entered_with_no_conversion():
+    parts = lambda cap, unit="kWp": capacity_parts(SimpleNamespace(capacity=cap, capacity_unit=unit))
+    assert parts("100") == ("100", "kWp") and parts("0.5", "MW") == ("0.5", "MW") and parts("500.00") == ("500", "kWp")
+    assert parts("1,250") == ("1250", "kWp") and parts("0.5 MW") == ("0.5", "MW") and parts("333") == ("333", "kWp")
+    assert parts("abc") == (None, "kWp") and parts("", "MW") == (None, "MW")
 
 
 def test_an_older_term_sheet_object_without_the_unit_is_read_as_kwp():
-    assert capacity_in(SimpleNamespace(capacity="500"), "MW") == "0.5"
-    assert capacity_in(None, "MW") is None and capacity_in(SimpleNamespace(), "kWp") is None
+    assert capacity_parts(SimpleNamespace(capacity="500")) == ("500", "kWp")
+    assert capacity_parts(None) == (None, "kWp") and capacity_parts(SimpleNamespace()) == (None, "kWp")
 
 
 def test_xlsx_import_splits_the_unit_from_the_number():
@@ -82,7 +81,7 @@ def test_a_complete_term_sheet_fills_every_header_field_it_has_data_for():
     assert lines == [
         ("title", "Construction and Installation Service Agreement"),
         ("centre", "for the Photovoltaic Solar Power Rooftop Facility"),
-        ("centre", "Rooftop PV Project with 0.5 MW"),
+        ("centre", "Rooftop PV Project with 500 kWp"),
         ("centre", "Contract no.: C-2026-001"),
         ("para", "This construction and installation service agreement (the \u201cAgreement\u201d) is made on 1 November 2026 "
                  "(the \u201cdate of this Agreement\u201d) at [*]."),
@@ -106,7 +105,7 @@ def test_a_complete_term_sheet_fills_every_header_field_it_has_data_for():
 def test_missing_values_stay_visible_as_placeholders_and_nothing_is_invented():
     lines = build_header(TermSheet())
     texts = [t for _, t in lines]
-    assert "[*] with [*] MW" in texts and "Contract no.: [*]" in texts
+    assert "[*] with [*] kWp" in texts and "Contract no.: [*]" in texts           # the unit is the one chosen on the term sheet
     assert sum(t.count("[*]") for t in texts) == 13           # the template has 13 blanks, none added or lost
     assert "laws of Thailand" in texts[7] and "laws of [*]" in texts[6]          # the Contractor is Thai, the Owner's country is not known
     assert not any("{" in t or "None" in t for t in texts)
@@ -117,15 +116,17 @@ def test_place_of_signing_and_the_owners_country_are_never_guessed():
     assert texts[4].endswith("at [*].") and "laws of [*] having" in texts[6]
 
 
-def test_capacity_in_the_header_is_in_megawatts_whatever_unit_was_entered():
-    for cap, unit, expect in (("500", "kWp", "0.5"), ("1250", "kWp", "1.25"), ("0.5", "MW", "0.5"), ("2", "MW", "2")):
-        assert build_header(full_term_sheet(capacity=cap, capacity_unit=unit))[2][1] == f"Rooftop PV Project with {expect} MW"
-    assert build_header(full_term_sheet(capacity="tbc"))[2][1] == "Rooftop PV Project with [*] MW"
+def test_the_header_shows_the_capacity_in_the_unit_that_was_entered():
+    for cap, unit, expect in (("100", "kWp", "100 kWp"), ("500", "kWp", "500 kWp"), ("0.5", "MW", "0.5 MW"), ("2", "MW", "2 MW"),
+                              ("1,250", "kWp", "1250 kWp"), ("0.1 MW", "kWp", "0.1 MW")):       # a unit typed in the text wins
+        assert build_header(full_term_sheet(capacity=cap, capacity_unit=unit))[2][1] == f"Rooftop PV Project with {expect}"
+    assert build_header(full_term_sheet(capacity="tbc"))[2][1] == "Rooftop PV Project with [*] kWp"
+    assert build_header(full_term_sheet(capacity="", capacity_unit="MW"))[2][1] == "Rooftop PV Project with [*] MW"
 
 
 def test_header_accepts_none_and_old_term_sheet_objects():
     assert build_header(None)[0] == ("title", TITLE)
-    assert build_header(SimpleNamespace(project_name="P", capacity="500"))[2][1] == "P with 0.5 MW"
+    assert build_header(SimpleNamespace(project_name="P", capacity="500"))[2][1] == "P with 500 kWp"
 
 
 # ---------------------------------------------------------------------------- Word file
@@ -140,7 +141,7 @@ def docx_lines(header):
 def test_the_word_file_starts_with_the_header_and_clause_numbering_is_unchanged():
     lines = docx_lines(build_header(full_term_sheet()))
     assert lines[0] == TITLE and lines[1] == "for the Photovoltaic Solar Power Rooftop Facility"
-    assert "Rooftop PV Project with 0.5 MW" in lines and "Contract no.: C-2026-001" in lines and "WHEREAS" in lines
+    assert "Rooftop PV Project with 500 kWp" in lines and "Contract no.: C-2026-001" in lines and "WHEREAS" in lines
     assert any(l.startswith("\u2022 Solar Owner Co., Ltd.") for l in lines) and any(l.startswith("\u2022 Sun Build Co., Ltd.") for l in lines)
     first_clause = next(i for i, l in enumerate(lines) if l.startswith("1.\t"))
     assert lines.index("WHEREAS") < first_clause
