@@ -10,6 +10,7 @@ from core.clause_data import build_library
 from core.clauses import cross_reference_scan
 from core.clause_params import limits_of
 from core.draft_state import library_for
+from core.header import build_header
 from core.render import render_docx
 from core.renumber import renumber_and_render
 from views.draft_steps import drafts
@@ -73,9 +74,20 @@ def render_picker(state_key, noun="draft"):
     st.caption(f"{sum(included.values())} of {len(included)} clauses included.")
 
 
-def render_preview(state_key, noun="draft", download=True):
-    """Numbered preview of the selected clauses, with a Word download unless `download` is False."""
+def render_preview(state_key, noun="draft", download=True, header=False):
+    """Numbered preview of the selected clauses, with a Word download unless `download` is False. With `header` the
+    contract header from the term sheet is shown above the clauses."""
     library = library_for(ensure_state(state_key), current_limits(), drafts.drafted_for_library())
+    header_lines = build_header(st.session_state.get("term_sheet"))
+    if header:
+        with st.container(border=True):
+            for style, text in header_lines:
+                if style == "title":
+                    st.markdown(f"**{plain(text)}**")
+                elif style in ("centre", "para"):
+                    st.write(plain(text))
+                else:
+                    st.write(plain(("\u2022 " if style == "bullet" else "") + text))
     rendered = renumber_and_render(library)
     st.subheader(f"Preview ({len(rendered)} clauses)")
 
@@ -111,7 +123,7 @@ def render_preview(state_key, noun="draft", download=True):
         return
     st.divider()
     buf = io.BytesIO()
-    render_docx(library, buf)
+    render_docx(library, buf, header=header_lines)
     buf.seek(0)
     st.download_button(
         f"Download {noun} as Word file",

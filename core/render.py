@@ -19,18 +19,28 @@ def _add_table(doc, table_data):
     doc.add_paragraph()
 
 
-def render_docx(clauses, out_path):
+def render_docx(clauses, out_path, header=None):
+    """`header` is a list of (style, text) lines from core.header.build_header; without it only the title is written."""
     rendered = renumber_and_render(clauses)
 
     doc = Document()
     doc.styles["Normal"].font.name = "Calibri"
     doc.styles["Normal"].font.size = Pt(11)
 
-    title = doc.add_paragraph()
-    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    r = title.add_run("Construction and Installation Service Agreement")
-    r.bold = True
-    r.font.size = Pt(14)
+    for style, text in header or [("title", "Construction and Installation Service Agreement")]:
+        p = doc.add_paragraph()
+        if style in ("title", "centre"):
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        if style == "bullet":
+            p.paragraph_format.left_indent = Cm(1.0)
+            p.paragraph_format.first_line_indent = Cm(-0.5)
+            text = "\u2022 " + text
+        if style == "indent":
+            p.paragraph_format.left_indent = Cm(1.0)
+        run = p.add_run(text)
+        if style == "title":
+            run.bold = True
+            run.font.size = Pt(14)
     doc.add_paragraph()
 
     for number, clause, item_lines in rendered:

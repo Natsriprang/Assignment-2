@@ -4,6 +4,7 @@ from whatever the term sheet actually contains, with add/remove controls for man
 The Continue button is disabled until every required field is filled (validation gate, no AI)."""
 import streamlit as st
 
+from core.capacity import UNITS, parse_capacity
 from core.clause_params import PARAMS
 from core.term_sheet_fields import TermSheet, Installment, REQUIRED_FIELDS
 from core.xlsx_parser import parse_xlsx
@@ -48,7 +49,11 @@ def render():
     ts.project_name = c1.text_input("Project name", ts.project_name)
     ts.project_location = c2.text_input("Project location", ts.project_location)
     c1, c2 = st.columns(2)
-    ts.capacity = c1.text_input("Capacity (kWp / MW)", ts.capacity)
+    with c1:
+        cap_value, cap_unit = st.columns([3, 1])
+        ts.capacity = cap_value.text_input("Capacity", ts.capacity)
+        _, shown_unit = parse_capacity(ts.capacity, getattr(ts, "capacity_unit", "kWp"))
+        ts.capacity_unit = cap_unit.selectbox("Unit", UNITS, index=UNITS.index(shown_unit), key=f"cap_unit_{v}")
     ts.roof_owner = c2.text_input("Roof owner", ts.roof_owner)
     c1, c2 = st.columns(2)
     ts.contract_no = c1.text_input("Contract no.", ts.contract_no)

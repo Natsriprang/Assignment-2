@@ -8,6 +8,7 @@ import re
 
 import openpyxl
 
+from core.capacity import format_number, parse_capacity
 from core.term_sheet_fields import Installment, TermSheet
 
 INSTALLMENT_PATTERN = re.compile(r"installment\s*(\d+)", re.IGNORECASE)
@@ -62,6 +63,10 @@ def parse_xlsx(file) -> TermSheet:
         value = _clean(ws[cell].value)
         if value:
             setattr(ts, field_name, value)
+
+    value, unit = parse_capacity(ts.capacity, ts.capacity_unit)
+    if value is not None:
+        ts.capacity, ts.capacity_unit = format_number(value), unit
 
     installments = {}
     for row in ws.iter_rows():

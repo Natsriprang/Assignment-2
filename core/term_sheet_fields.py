@@ -15,6 +15,7 @@ class TermSheet:
     project_name: str = ""
     project_location: str = ""
     capacity: str = ""
+    capacity_unit: str = "kWp"      # "kWp" or "MW"
     contract_no: str = ""
     contract_date: str = ""
 
