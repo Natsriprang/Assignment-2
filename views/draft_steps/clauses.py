@@ -8,13 +8,14 @@ import re
 
 import streamlit as st
 
-from ai.drafting import draft_clause, numbers_in, render_footnoted
+from ai.drafting import draft_clause
 from ai.interpret import (InterpretationError, candidate_question, context_summary, interpret_request,
                           result_lines, term_sheet_text, term_sheet_warnings)
 from ai.llm import MODEL, AIStepError, CountingClient, get_client
 from ai.references import select_references
 from core.clause_data import build_library
 from core.draft_state import library_for
+from core.figures import numbers_in
 from core.reference_library import load_references
 from core.term_sheet_fields import REQUIRED_FIELDS
 from views import clause_sandbox
@@ -81,11 +82,16 @@ def request_id(text):
 
 
 def new_clause_requests(result):
-    """[(id, text)] for the requests in this result that match no clause, in the order they were first raised."""
+    """[(id, text)] for the new-clause requests to show, in the order they were first raised: the ones in this
+    result that match no clause, plus every request that already has a draft, so a draft never disappears when a
+    later reply no longer lists its request."""
     found = {}
     for u in result.unmapped_requests:
         if not u.candidate_key:
             found[request_id(u.request)] = u.request
+    texts = {e["id"]: e["text"] for e in st.session_state.get(REQUESTS_KEY, [])}
+    for entry_id, drafted in st.session_state.get(DRAFTS_KEY, {}).items():
+        found.setdefault(entry_id, texts.get(entry_id, drafted.request))
     return sorted(found.items())
 
 
@@ -94,8 +100,8 @@ def kept_drafts():
     kept = []
     for entry_id, drafted in sorted(st.session_state.get(DRAFTS_KEY, {}).items()):
         if st.session_state.get(widget_key("keep", str(entry_id)), True):
-            text, footnotes = render_footnoted(drafted)
-            kept.append({"request": drafted.request, "title": drafted.title, "text": text, "footnotes": footnotes})
+            kept.append({"request": drafted.request, "title": drafted.title, "text": drafted.text,
+                         "references": [r.label for r in drafted.sources.values()]})
     return kept
 
 
@@ -105,18 +111,21 @@ def show_lines_caption(lines):
 
 
 def render_draft(entry_id, drafted):
-    text, footnotes = render_footnoted(drafted)
     with st.container(border=True):
         st.markdown(f"**Proposed new clause: {plain(drafted.title)}**")
         if not drafted.selection.found:
             st.warning("No reference in the library for this request. The AI wrote the clause itself; "
                        "review it carefully.")
-        st.write(plain(text))
-        show_lines_caption(footnotes)
+        st.write(plain(drafted.text))
+        if drafted.references_line():
+            st.caption(plain(drafted.references_line()))
         if drafted.selection.picks:
             with st.expander("Why these references"):
-                for p in drafted.selection.picks:
-                    st.caption(plain(f"{p.ref_id}: {p.reason}"))
+                refs = get_references()
+                for p in drafted.selection.used:
+                    st.caption(plain(f"Used: {refs[p.ref_id].label}. {p.reason}"))
+                for p in drafted.selection.related:
+                    st.caption(plain(f"Not used, related but a different subject: {refs[p.ref_id].label}. {p.reason}"))
         if drafted.notes:
             with st.expander("Points to decide or check"):
                 show_lines(f"- {n}" for n in drafted.notes)
