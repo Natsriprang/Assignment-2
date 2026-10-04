@@ -11,6 +11,7 @@ from core.clauses import cross_reference_scan
 from core.clause_params import limits_of
 from core.draft_state import library_for
 from core.header import build_header
+from core.vat import vat_warning
 from core.render import render_docx
 from core.renumber import renumber_and_render
 from views.draft_steps import drafts
@@ -24,6 +25,17 @@ def plain(text):
 def current_limits():
     """The caps chosen on the term sheet (defaults if none were chosen)."""
     return limits_of(st.session_state.get("term_sheet"))
+
+
+def current_term_sheet():
+    return st.session_state.get("term_sheet")
+
+
+def show_vat_notice():
+    """The red notice that VAT is not chosen. Nothing is shown once it is."""
+    ts = current_term_sheet()
+    if ts is not None and vat_warning(ts):
+        st.error("\u2757 " + vat_warning(ts))
 
 
 def checkbox_key(state_key, clause_key):
@@ -77,7 +89,7 @@ def render_picker(state_key, noun="draft"):
 def render_preview(state_key, noun="draft", download=True, header=False):
     """Numbered preview of the selected clauses, with a Word download unless `download` is False. With `header` the
     contract header from the term sheet is shown above the clauses."""
-    library = library_for(ensure_state(state_key), current_limits(), drafts.drafted_for_library())
+    library = library_for(ensure_state(state_key), current_limits(), drafts.drafted_for_library(), current_term_sheet())
     header_lines = build_header(st.session_state.get("term_sheet"))
     if header:
         with st.container(border=True):

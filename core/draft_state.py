@@ -2,13 +2,16 @@
 from core.clause_data import build_library
 from core.clause_params import resolve_clause
 from core.drafted import insert_drafted
+from core.fill import fill_template
 
 
-def library_for(included, limits=None, drafted=None):
+def library_for(included, limits=None, drafted=None, term_sheet=None):
     """A fresh clause library with the selection applied, the parameters (caps) resolved, and the drafted new
-    clauses inserted. Keys missing from `included` keep their default; limits missing from `limits` keep theirs."""
+    clauses inserted, and the term sheet's values written in. Keys missing from `included` keep their default; limits
+    missing from `limits` keep theirs."""
     library = build_library()
     for clause in library:
         clause.included = included.get(clause.key, clause.included)
         resolve_clause(clause, limits)
+    fill_template(library, term_sheet)
     return insert_drafted(library, drafted or [])

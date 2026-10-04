@@ -6,5 +6,6 @@ from views.draft_steps import clauses
 
 
 def render():
+    clause_sandbox.show_vat_notice()
     st.caption("The draft as it stands: the clauses chosen in the previous step, renumbered.")
     clause_sandbox.render_preview(clauses.STATE_KEY, noun="draft", header=True)

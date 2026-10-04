@@ -357,6 +357,8 @@ def render():
         st.button("Back to term sheet", on_click=flow.go_back)
         return
 
+    clause_sandbox.show_vat_notice()
+
     # Temporary key input; Phase 8 replaces this with the shared credentials module.
     entered = st.sidebar.text_input("OpenAI API key", type="password",
                                     value=st.session_state.get("openai_api_key", ""))
@@ -372,7 +374,7 @@ def render():
     chat = st.session_state.setdefault("chat", [])
     included = clause_sandbox.ensure_state(STATE_KEY)
     limits = clause_sandbox.current_limits()
-    clauses = {c.key: c for c in library_for(included, limits)}
+    clauses = {c.key: c for c in library_for(included, limits, None, ts)}
 
     for w in term_sheet_warnings(ts):
         st.warning(w)
@@ -449,7 +451,7 @@ def render():
                 error = None
                 try:
                     result = interpret_request(
-                        ts, library_for(included, limits), CountingClient(client, calls, STEP_NAME), MODEL,
+                        ts, library_for(included, limits, None, ts), CountingClient(client, calls, STEP_NAME), MODEL,
                         [{"role": m["role"], "content": content_for_model(m)} for m in chat])
                 except InterpretationError as e:
                     error = str(e)

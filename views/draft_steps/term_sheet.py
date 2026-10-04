@@ -7,8 +7,12 @@ import streamlit as st
 from core.capacity import UNITS, parse_capacity
 from core.clause_params import PARAMS
 from core.term_sheet_fields import TermSheet, Installment, REQUIRED_FIELDS
+from core.vat import vat_choice, vat_warning
 from core.xlsx_parser import parse_xlsx
 from views.draft_steps import flow
+
+
+VAT_LABELS = {"": "\u2014 not chosen \u2014", "inclusive": "Inclusive of VAT", "exclusive": "Exclusive of VAT"}
 
 
 def is_complete():
@@ -78,11 +82,12 @@ def render():
     c1, c2, c3 = st.columns(3)
     ts.contract_price_number = c1.text_input("Price (THB, number)", ts.contract_price_number)
     ts.contract_price_words = c2.text_input("Price (in words)", ts.contract_price_words)
-    ts.vat_treatment = c3.selectbox(
-        "VAT",
-        ["inclusive", "exclusive"],
-        index=0 if ts.vat_treatment != "exclusive" else 1,
-    )
+    current_vat = vat_choice(ts)
+    chosen_vat = c3.selectbox("VAT", list(VAT_LABELS), index=list(VAT_LABELS).index(current_vat), format_func=VAT_LABELS.get)
+    if chosen_vat != current_vat:                  # only a real change by the user overwrites what the term sheet said
+        ts.vat_treatment = chosen_vat
+    if vat_warning(ts):
+        st.error("\u2757 " + vat_warning(ts))
 
     st.subheader("Payment installments")
     st.caption("Add or remove installments.")
