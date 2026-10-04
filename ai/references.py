@@ -21,8 +21,10 @@ choose the entry that contains it, not every payment entry.
 - Prefer entries from the author's own contracts ("CA (long version)" and "EPC subcontract"). Choose the Thai \
 government form only when the own contracts do not cover the subject or when it adds something they lack, because \
 it is written for a government agency as Employer and is much more one-sided.
-- If nothing in the catalogue addresses the subject, return an empty list. Do not stretch to a loosely related \
-entry.
+- The request may be short, informal or contain typos, and an entry may use a different word for the same \
+subject (for example a clause called "Guarantee" for a request about a warranty). Choose the entries that cover the \
+subject under any name.
+- Return an empty list only when no entry is about the subject at all.
 - "reason" is one short sentence saying what in the entry is relevant to the request.""" % MAX_PICKS
 
 

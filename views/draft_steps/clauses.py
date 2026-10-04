@@ -2,12 +2,13 @@
 the draft. The chat proposes changes (add or remove a clause, reword a provision) and asks when
 something is unclear; ticked proposals are written into the checkboxes by the Apply button, and
 the user can keep adjusting by hand. At least one analysis must run before the user continues."""
+import difflib
 import hashlib
 import re
 
 import streamlit as st
 
-from ai.drafting import draft_clause, render_footnoted
+from ai.drafting import draft_clause, numbers_in, render_footnoted
 from ai.interpret import (InterpretationError, candidate_question, context_summary, interpret_request,
                           result_lines, term_sheet_text, term_sheet_warnings)
 from ai.llm import MODEL, AIStepError, CountingClient, get_client
@@ -21,7 +22,8 @@ from views.draft_steps import flow
 
 STATE_KEY = "draft_included"
 DEVIATIONS_KEY = "draft_deviations"
-DRAFTS_KEY = "clause_drafts"          # request text -> DraftedClause
+DRAFTS_KEY = "clause_drafts_v2"       # request id -> DraftedClause (new key: older sessions stored another shape)
+REQUESTS_KEY = "new_clause_requests"  # [{"id": int, "text": str}] in the order the requests were first raised
 STEP_NAME = "interpret"
 
 
@@ -56,10 +58,45 @@ def get_references():
     return load_references()
 
 
+def normalize(text):
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", text.lower()).split())
+
+
+def request_id(text):
+    """A stable id for a request with no matching clause, so it keeps its place and its draft when the model
+    words it slightly differently in a later reply."""
+    entries = st.session_state.setdefault(REQUESTS_KEY, [])
+    norm = normalize(text)
+    for e in entries:
+        if normalize(e["text"]) == norm:
+            e["text"] = text
+            return e["id"]
+    for e in entries:
+        if (difflib.SequenceMatcher(None, normalize(e["text"]), norm).ratio() >= 0.85
+                and numbers_in(e["text"]) == numbers_in(text)):
+            e["text"] = text
+            return e["id"]
+    entries.append({"id": len(entries) + 1, "text": text})
+    return entries[-1]["id"]
+
+
+def new_clause_requests(result):
+    """[(id, text)] for the requests in this result that match no clause, in the order they were first raised."""
+    found = {}
+    for u in result.unmapped_requests:
+        if not u.candidate_key:
+            found[request_id(u.request)] = u.request
+    return sorted(found.items())
+
+
 def kept_drafts():
-    """Drafted new clauses the user chose to keep, for the next step to merge into the contract."""
-    return [d for request, d in st.session_state.get(DRAFTS_KEY, {}).items()
-            if st.session_state.get(widget_key("keep", request), True)]
+    """Drafted new clauses the user kept, for the next step to merge into the contract."""
+    kept = []
+    for entry_id, drafted in sorted(st.session_state.get(DRAFTS_KEY, {}).items()):
+        if st.session_state.get(widget_key("keep", str(entry_id)), True):
+            text, footnotes = render_footnoted(drafted)
+            kept.append({"request": drafted.request, "title": drafted.title, "text": text, "footnotes": footnotes})
+    return kept
 
 
 def show_lines_caption(lines):
@@ -67,15 +104,13 @@ def show_lines_caption(lines):
         st.caption(plain(line))
 
 
-def render_draft(drafted):
+def render_draft(entry_id, drafted):
     text, footnotes = render_footnoted(drafted)
     with st.container(border=True):
         st.markdown(f"**Proposed new clause: {plain(drafted.title)}**")
-        if not drafted.has_references:
+        if not drafted.selection.found:
             st.warning("No reference in the library for this request. The AI wrote the clause itself; "
                        "review it carefully.")
-        elif drafted.needs_review:
-            st.info("Some sentences are marked \u2020 or \u2021 and need a closer look.")
         st.write(plain(text))
         show_lines_caption(footnotes)
         if drafted.selection.picks:
@@ -85,7 +120,25 @@ def render_draft(drafted):
         if drafted.notes:
             with st.expander("Points to decide or check"):
                 show_lines(f"- {n}" for n in drafted.notes)
-        st.checkbox("Keep this draft for the next step", value=True, key=widget_key("keep", drafted.request))
+        st.checkbox("Keep this draft for the next step", value=True, key=widget_key("keep", str(entry_id)))
+
+
+def display_text(result, latest):
+    """The short line shown in the chat for a reply. The details are shown once, in the results panel, so older
+    replies do not repeat them."""
+    changes = len(result.clause_actions) + len(result.deviations)
+    new = len([u for u in result.unmapped_requests if not u.candidate_key])
+    questions = len(result.ambiguities) + len([u for u in result.unmapped_requests if u.candidate_key])
+    parts = []
+    if changes:
+        parts.append(f"{changes} proposed change{'s' if changes != 1 else ''}")
+    if new:
+        parts.append(f"{new} new clause request{'s' if new != 1 else ''}")
+    if questions:
+        parts.append(f"{questions} question{'s' if questions != 1 else ''} for you")
+    if not parts:
+        return "I found no changes to the standard contract."
+    return ("I found " if latest else "Earlier reply: ") + ", ".join(parts) + (". The details are below." if latest else ".")
 
 
 def apply_proposals(msg):
@@ -122,75 +175,82 @@ def clause_preview(clauses, key, removing):
                 show(sub, caption=True)
 
 
-def render_latest(msg, clauses, turn, stale):
-    """Renders the newest assistant reply: proposal cards with an Apply button, or the applied
-    summary, plus any questions. Returns a quick-reply text if a Yes/No button was pressed."""
+def render_results(msg, clauses, turn, stale):
+    """The results panel for the latest reply: the full current picture, shown once. Returns (quick_reply,
+    draft_request) when a Yes/No or draft button was pressed."""
     result = msg["result"]
-    proposals, questions, uncovered = result_lines(result, list(clauses.values()))
+    proposals, questions, _ = result_lines(result, list(clauses.values()))
+    requests = new_clause_requests(result)
     quick_reply, draft_request = None, None
 
-    if not (proposals or questions or uncovered):
-        st.write("I found no changes to the standard contract.")
+    with st.container(border=True):
+        st.subheader("What I found")
+        if not (proposals or questions or requests):
+            st.write("No changes to the standard contract.")
 
-    if msg.get("applied") is not None:
-        st.success("Applied to the draft.")
-        show_lines(f"- {line}" for line in msg["applied"])
-    elif proposals:
-        st.write("Here is what I would change:")
-        for a in result.clause_actions:
-            with st.container(border=True):
-                verb = "Remove" if a.action == "exclude" else "Add"
-                st.markdown(f"**{verb} clause: {clauses[a.clause_key].title}**")
-                source = "You wrote" if a.basis == "comment" else "From the term sheet"
-                st.caption(f"{source}: \u201c{plain(a.evidence)}\u201d")
-                if a.reason.strip() and a.reason.strip().lower() != a.evidence.strip().lower():
-                    st.caption(f"Why: {plain(a.reason)}")
-                clause_preview(clauses, a.clause_key, removing=a.action == "exclude")
-                if not a.evidence_verified:
-                    st.warning("This quote was not found in your messages. Check it before applying.")
-                st.checkbox("Apply this change", value=a.evidence_verified, key=action_key(a))
+        if msg.get("applied") is not None:
+            st.success("Applied to the draft.")
+            show_lines(f"- {line}" for line in msg["applied"])
+        elif proposals:
+            st.markdown("**Proposed changes**")
+            for a in result.clause_actions:
+                with st.container(border=True):
+                    verb = "Remove" if a.action == "exclude" else "Add"
+                    st.markdown(f"**{verb} clause: {clauses[a.clause_key].title}**")
+                    source = "You wrote" if a.basis == "comment" else "From the term sheet"
+                    st.caption(f"{source}: \u201c{plain(a.evidence)}\u201d")
+                    if a.reason.strip() and a.reason.strip().lower() != a.evidence.strip().lower():
+                        st.caption(f"Why: {plain(a.reason)}")
+                    clause_preview(clauses, a.clause_key, removing=a.action == "exclude")
+                    if not a.evidence_verified:
+                        st.warning("This quote was not found in your messages. Check it before applying.")
+                    st.checkbox("Apply this change", value=a.evidence_verified, key=action_key(a))
 
-        for d in result.deviations:
-            with st.container(border=True):
-                st.markdown(f"**{clauses[d.clause_key].title}: {d.summary}**")
-                st.write(f"Wording change: {plain(d.requested_change)}")
-                if d.change_type == "add":
-                    st.caption("This adds new wording to the clause.")
-                else:
-                    st.caption(f"Current wording: \u201c{plain(d.provision_quote)}\u201d")
-                st.caption(f"You wrote: \u201c{plain(d.evidence)}\u201d")
-                if not d.evidence_verified:
-                    st.warning("This quote was not found in your messages. Check it before applying.")
-                st.checkbox("Keep this request", value=d.evidence_verified, key=deviation_key(d))
+            for d in result.deviations:
+                with st.container(border=True):
+                    st.markdown(f"**{clauses[d.clause_key].title}: {d.summary}**")
+                    st.write(f"Wording change: {plain(d.requested_change)}")
+                    if d.change_type == "add":
+                        st.caption("This adds new wording to the clause.")
+                    else:
+                        st.caption(f"Current wording: \u201c{plain(d.provision_quote)}\u201d")
+                    st.caption(f"You wrote: \u201c{plain(d.evidence)}\u201d")
+                    if not d.evidence_verified:
+                        st.warning("This quote was not found in your messages. Check it before applying.")
+                    st.checkbox("Keep this request", value=d.evidence_verified, key=deviation_key(d))
 
-        st.button("Apply selected changes", type="primary", on_click=apply_proposals, args=(msg,),
-                  disabled=stale, key=widget_key("apply", str(turn)))
+            st.button("Apply selected changes", type="primary", on_click=apply_proposals, args=(msg,),
+                      disabled=stale, key=widget_key("apply", str(turn)))
 
-    for i, u in enumerate(u for u in result.unmapped_requests if not u.candidate_key):
-        show_lines([f"Not covered by the clause library: {u.request}"])
-        drafted = st.session_state.get(DRAFTS_KEY, {}).get(u.request)
-        if drafted:
-            render_draft(drafted)
-        elif st.button("Find references and draft this clause", key=widget_key("draft", str(turn), str(i))):
-            draft_request = u.request
+        if requests:
+            st.markdown("**New clauses you asked for**")
+            st.caption("The library has no matching clause. I can look for references and draft one.")
+            drafts = st.session_state.get(DRAFTS_KEY, {})
+            for entry_id, text in requests:
+                with st.container(border=True):
+                    st.write(plain(text))
+                    if entry_id in drafts:
+                        render_draft(entry_id, drafts[entry_id])
+                    elif st.button("Find references and draft this clause", key=widget_key("draft", str(entry_id))):
+                        draft_request = (entry_id, text)
 
-    if questions:
-        st.markdown("**I need to check something:**")
-        show_lines(result.ambiguities)
-        for i, u in enumerate(u for u in result.unmapped_requests if u.candidate_key):
-            title = clauses[u.candidate_key].title
-            show_lines([candidate_question(u, title)])
-            said = u.evidence or u.request
-            c1, c2, _ = st.columns([2, 2, 3])
-            if c1.button("Yes, that's what I meant", key=widget_key("yes", str(turn), str(i))):
-                quick_reply = f"Yes, by \u201c{said}\u201d I meant the '{title}' clause."
-            if c2.button("No, something else", key=widget_key("no", str(turn), str(i))):
-                quick_reply = f"No, by \u201c{said}\u201d I did not mean the '{title}' clause."
+        if questions:
+            st.markdown("**I need to check something**")
+            show_lines(result.ambiguities)
+            for i, u in enumerate(u for u in result.unmapped_requests if u.candidate_key):
+                title = clauses[u.candidate_key].title
+                show_lines([candidate_question(u, title)])
+                said = u.evidence or u.request
+                c1, c2, _ = st.columns([2, 2, 3])
+                if c1.button("Yes, that's what I meant", key=widget_key("yes", str(turn), str(i))):
+                    quick_reply = f"Yes, by \u201c{said}\u201d I meant the '{title}' clause."
+                if c2.button("No, something else", key=widget_key("no", str(turn), str(i))):
+                    quick_reply = f"No, by \u201c{said}\u201d I did not mean the '{title}' clause."
 
-    if result.notes:
-        with st.expander("Automatic checks"):
-            st.caption("Proposals the system discarded because they were invalid or changed nothing.")
-            show_lines(f"- {n}" for n in result.notes)
+        if result.notes:
+            with st.expander("Automatic checks"):
+                st.caption("Proposals the system discarded because they were invalid or changed nothing.")
+                show_lines(f"- {n}" for n in result.notes)
     return quick_reply, draft_request
 
 
@@ -247,23 +307,27 @@ def render():
                      "sheet itself, for example whether the roof owner is a different party from the Owner.")
             skip = st.button("No special requests \u2014 just check the term sheet", disabled=client is None)
 
-    quick_reply, draft_request = None, None
     for i, msg in enumerate(chat):
         with st.chat_message(msg["role"]):
-            if msg["role"] == "assistant" and i == last_idx:
-                quick_reply, draft_request = render_latest(msg, clauses, len(chat), stale)
+            if msg["role"] == "assistant" and "result" in msg:
+                show_lines([display_text(msg["result"], latest=i == last_idx)])
             else:
                 show_lines(msg["content"].split("\n"))
 
+    quick_reply, draft_request = None, None
+    if latest is not None:
+        quick_reply, draft_request = render_results(latest, clauses, len(chat), stale)
+
     if client is not None and draft_request:
+        entry_id, request_text = draft_request
         with st.chat_message("assistant"):
             with st.spinner("Finding references and drafting..."):
                 error = None
                 try:
                     refs = get_references()
-                    selection = select_references(draft_request, refs,
+                    selection = select_references(request_text, refs,
                                                   CountingClient(client, calls, "select_references"), MODEL)
-                    drafted = draft_clause(draft_request, selection, refs,
+                    drafted = draft_clause(request_text, selection, refs,
                                            CountingClient(client, calls, "draft_clause"), MODEL)
                 except (AIStepError, FileNotFoundError) as e:
                     error = str(e)
@@ -272,12 +336,12 @@ def render():
             if error:
                 st.error(error)
             else:
-                st.session_state.setdefault(DRAFTS_KEY, {})[draft_request] = drafted
+                st.session_state.setdefault(DRAFTS_KEY, {})[entry_id] = drafted
                 st.rerun()
 
     if client is None:
         st.info("Enter an OpenAI API key in the sidebar to start.")
-    prompt = st.chat_input("Describe a change, or answer the question above...", disabled=client is None)
+    prompt = st.chat_input("Describe a change, or answer a question above...", disabled=client is None)
     text = (prompt or quick_reply or "").strip()
 
     if client is not None and (text or skip):

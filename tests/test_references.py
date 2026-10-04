@@ -9,8 +9,8 @@ from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from ai.drafting import (NO_SOURCE, build_prompt, draft_clause, draft_schema, render_footnoted, superscript,
-                         unsupported_numbers, validate_draft)
+from ai.drafting import (AI_NOTE, NO_SOURCE, build_prompt, draft_clause, draft_schema, figures_not_in, numbers_in,
+                         render_footnoted, superscript, unsupported_numbers, validate_draft)
 from ai.llm import AIStepError, CountingClient
 from ai.references import MAX_PICKS, Selection, Pick, select_references, selection_schema, validate_selection
 from core.reference_library import catalogue_lines, load_references
@@ -75,6 +75,13 @@ def test_selection_is_capped():
     assert len(sel.picks) == MAX_PICKS and sel.notes
 
 
+def test_selection_prompt_does_not_discourage_short_requests_or_other_wording():
+    from ai.references import SELECT_PROMPT
+    assert "typos" in SELECT_PROMPT and "different word for the same subject" in SELECT_PROMPT
+    assert "only when no entry is about the subject at all" in SELECT_PROMPT
+    assert "Do not stretch" not in SELECT_PROMPT
+
+
 def test_empty_selection_is_not_found():
     assert not validate_selection("req", {"picks": []}, REFS).found
 
@@ -90,28 +97,39 @@ def test_select_references_sends_catalogue_and_request_and_enforces_ids():
 
 
 # ----------------------------------------------------------------------------- drafting with references
-def test_footnotes_are_numbered_by_first_use_and_reused():
+def test_footnotes_are_numbers_only_numbered_by_first_use_and_reused():
     raw = draft_payload(
         sentence("The Contractor warrants the Works for two (2) years.", ["epc-6"]),
-        sentence("Defects shall be repaired within seven (7) days.", ["ca-6", "epc-6"]),
-        sentence("The Contractor shall keep the roof clean.", ["ca-6"]))
-    d = validate_draft("add a 2 year warranty, repair in 7 days", raw, selection_of("ca-6", "epc-6"), REFS)
-    assert [(f.number, f.ref_id) for f in d.footnotes] == [(1, "epc-6"), (2, "ca-6")]
+        sentence("The Contractor shall keep the roof clean.", ["ca-6", "epc-6"]),
+        sentence("The Contractor shall return the keys.", ["ca-6"]))
+    d = validate_draft("add a two-year warranty and keep the roof clean and return the keys", raw, selection_of("ca-6", "epc-6"), REFS)
     text, lines = render_footnoted(d)
     assert text == ("The Contractor warrants the Works for two (2) years.\u00b9 "
-                    "Defects shall be repaired within seven (7) days.\u00b2,\u00b9 "
-                    "The Contractor shall keep the roof clean.\u00b2")
+                    "The Contractor shall keep the roof clean.\u00b2,\u00b9 "
+                    "The Contractor shall return the keys.\u00b2")
+    assert [l[:1] for l in lines] == ["\u00b9", "\u00b2"]
     assert lines[0].startswith("\u00b9 EPC subcontract, clause 6: Warranty") and "[not public]" in lines[0]
-    assert d.has_references and not d.needs_review
+    assert lines[1].startswith("\u00b2 CA (long version), clause 6: Guarantee")
+    assert not any(ch in text + " ".join(lines) for ch in ("\u2020", "\u2021"))          # no dagger or double-dagger
 
 
-def test_unknown_citation_is_dropped_and_sentence_becomes_ai_written():
+def test_a_sentence_without_a_reference_gets_a_numbered_note_saying_the_ai_wrote_it():
+    raw = draft_payload(sentence("The Contractor warrants the Works.", ["epc-6"]),
+                        sentence("The Contractor shall indemnify the Owner.", [NO_SOURCE], "ai_written"),
+                        sentence("The Contractor shall insure the Works.", [NO_SOURCE], "ai_written"))
+    d = validate_draft("add a warranty, an indemnity and insurance", raw, selection_of("epc-6"), REFS)
+    text, lines = render_footnoted(d)
+    assert text.endswith("insure the Works.\u00b2") and "indemnify the Owner.\u00b2" in text       # the AI note is shared
+    assert lines[1] == "\u00b2 " + AI_NOTE
+
+
+def test_unknown_citation_is_dropped_and_sentence_gets_the_ai_note():
     raw = draft_payload(sentence("The Contractor shall indemnify the Owner.", ["gov-11"]))
-    d = validate_draft("req", raw, selection_of("ca-6"), REFS)
+    d = validate_draft("add an indemnity", raw, selection_of("ca-6"), REFS)
     s = d.sentences[0]
-    assert s.source_ids == [] and s.basis == "ai_written" and d.needs_review and not d.has_references
+    assert s.source_ids == [] and s.basis == "ai_written" and not d.has_references
     assert any("gov-11" in n for n in d.notes)
-    assert render_footnoted(d)[0].endswith("\u2020")
+    assert render_footnoted(d)[0].endswith("\u00b9") and render_footnoted(d)[1] == ["\u00b9 " + AI_NOTE]
 
 
 def test_basis_ai_written_with_a_valid_citation_is_treated_as_adapted():
@@ -119,10 +137,20 @@ def test_basis_ai_written_with_a_valid_citation_is_treated_as_adapted():
     assert d.sentences[0].basis == "adapted"
 
 
+# ----------------------------------------------------------------------------- figures written in words
+def test_a_figure_written_in_words_in_the_request_counts_as_given():
+    raw = draft_payload(sentence("The Contractor warrants the System for two (2) years.", [NO_SOURCE], "ai_written"))
+    d = validate_draft("add a two-year warranty", raw, selection_of(), REFS)
+    assert d.sentences[0].unsupported_numbers == [] and render_footnoted(d)[1] == ["\u00b9 " + AI_NOTE]
+    assert numbers_in("a twenty-five day period") >= {20.0, 5.0, 25.0}
+    assert figures_not_in("within 30 (thirty) days", ["add thirty days"]) == []
+    assert figures_not_in("within 30 (thirty) days", ["add a warranty"]) == ["30"]
+
+
 # ----------------------------------------------------------------------------- no reference in the library
-def test_no_reference_in_the_library_is_drafted_by_the_ai_and_flagged():
+def test_no_reference_in_the_library_is_drafted_by_the_ai_and_noted():
     """The fallback path, and a README test case: nothing in the library covers drone inspections."""
-    request = "add a clause on a drone inspection of the roof before handover"
+    request = "add a clause requiring a drone inspection of the roof before handover"
     client = SequenceClient(
         picks(),                                                                                   # selection finds nothing
         draft_payload(sentence("Before handover the Contractor shall carry out a drone inspection of the roof.", [NO_SOURCE], "ai_written"),
@@ -130,13 +158,50 @@ def test_no_reference_in_the_library_is_drafted_by_the_ai_and_flagged():
                       title="Drone inspection", notes=["Decide who pays for the inspection."]))
     sel = select_references(request, REFS, client)
     drafted = draft_clause(request, sel, REFS, client)
-    assert not sel.found and not drafted.has_references and drafted.needs_review and drafted.footnotes == []
+    assert not sel.found and not drafted.has_references and drafted.sources == {}
     assert all(s.basis == "ai_written" for s in drafted.sentences)
     schema = client.requests[1]["response_format"]["json_schema"]["schema"]
     assert schema["properties"]["sentences"]["items"]["properties"]["source_ids"]["items"]["enum"] == [NO_SOURCE]
     assert "(none: the library has nothing on this subject)" in client.requests[1]["messages"][1]["content"]
     text, lines = render_footnoted(drafted)
-    assert text.count("\u2020") == 2 and len(lines) == 1 and lines[0].startswith("\u2020")
+    assert text.count("\u00b9") == 2 and lines == ["\u00b9 " + AI_NOTE]
+
+
+def test_draft_prompt_contains_only_selected_references_with_issues_and_caveats():
+    prompt = build_prompt("add a warranty", selection_of("ca-6"), REFS)
+    assert '<reference id="ca-6"' in prompt and "2 (Two) years" in prompt
+    assert "Known issues:" in prompt and "<source_caveats>" in prompt and "- CA (long version):" in prompt
+    assert 'id="epc-6"' not in prompt
+
+
+# ----------------------------------------------------------------------------- figures written in words
+def test_a_figure_written_in_words_in_the_request_counts_as_given():
+    raw = draft_payload(sentence("The Contractor warrants the System for two (2) years.", [NO_SOURCE], "ai_written"))
+    d = validate_draft("add a two-year warranty", raw, selection_of(), REFS)
+    assert d.sentences[0].unsupported_numbers == [] and render_footnoted(d)[1] == ["\u00b9 " + AI_NOTE]
+    assert numbers_in("a twenty-five day period") >= {20.0, 5.0, 25.0}
+    assert figures_not_in("within 30 (thirty) days", ["add thirty days"]) == []
+    assert figures_not_in("within 30 (thirty) days", ["add a warranty"]) == ["30"]
+
+
+# ----------------------------------------------------------------------------- no reference in the library
+def test_no_reference_in_the_library_is_drafted_by_the_ai_and_noted():
+    """The fallback path, and a README test case: nothing in the library covers drone inspections."""
+    request = "add a clause requiring a drone inspection of the roof before handover"
+    client = SequenceClient(
+        picks(),                                                                                   # selection finds nothing
+        draft_payload(sentence("Before handover the Contractor shall carry out a drone inspection of the roof.", [NO_SOURCE], "ai_written"),
+                      sentence("The Contractor shall give the Owner the inspection images within [*] days.", [NO_SOURCE], "ai_written"),
+                      title="Drone inspection", notes=["Decide who pays for the inspection."]))
+    sel = select_references(request, REFS, client)
+    drafted = draft_clause(request, sel, REFS, client)
+    assert not sel.found and not drafted.has_references and drafted.sources == {}
+    assert all(s.basis == "ai_written" for s in drafted.sentences)
+    schema = client.requests[1]["response_format"]["json_schema"]["schema"]
+    assert schema["properties"]["sentences"]["items"]["properties"]["source_ids"]["items"]["enum"] == [NO_SOURCE]
+    assert "(none: the library has nothing on this subject)" in client.requests[1]["messages"][1]["content"]
+    text, lines = render_footnoted(drafted)
+    assert text.count("\u00b9") == 2 and lines == ["\u00b9 " + AI_NOTE]
 
 
 def test_draft_prompt_contains_only_selected_references_with_issues_and_caveats():
@@ -147,19 +212,16 @@ def test_draft_prompt_contains_only_selected_references_with_issues_and_caveats(
 
 
 # ----------------------------------------------------------------------------- figures
-def test_unsupported_figures_are_flagged():
+def test_unsupported_figures_are_flagged_with_a_numbered_note():
     assert unsupported_numbers("Repair within 7 days.", "add warranty", [REFS["ca-6"].text]) == []        # 7 is in ca-6
     assert unsupported_numbers("Repair within 10 days.", "add warranty", [REFS["ca-6"].text]) == ["10"]
     assert unsupported_numbers("Interest of 1.5 percent.", "interest of 1.50 percent", []) == []          # 1.5 == 1.50
     assert unsupported_numbers("Pay within 30 days.", "any request", []) == ["30"]
-
-
-def test_a_flagged_figure_gets_a_marker_and_a_footnote_line():
     raw = draft_payload(sentence("The Contractor shall repair defects within 10 days.", ["ca-6"]))
     d = validate_draft("add a warranty", raw, selection_of("ca-6"), REFS)
     text, lines = render_footnoted(d)
-    assert d.sentences[0].unsupported_numbers == ["10"] and d.needs_review
-    assert "\u00b9\u2021" in text and lines[-1].startswith("\u2021")
+    assert d.sentences[0].unsupported_numbers == ["10"] and "\u00b9,\u00b2" in text
+    assert lines[1] == "\u00b2 Contains the figure 10, which is not in your request or in the cited references."
 
 
 def test_superscript_numbers():
@@ -185,8 +247,8 @@ def test_both_steps_are_counted_by_name():
 
 def test_schema_enums():
     assert set(selection_schema(REFS)["properties"]["picks"]["items"]["properties"]["ref_id"]["enum"]) == set(REFS)
-    items = draft_schema(["ca-6", "epc-6"])["properties"]["sentences"]["items"]["properties"]["source_ids"]["items"]
-    assert items["enum"] == ["ca-6", "epc-6"]
+    props = draft_schema(["ca-6", "epc-6"])["properties"]["sentences"]["items"]["properties"]
+    assert props["source_ids"]["items"]["enum"] == ["ca-6", "epc-6"] and "origin" not in props
 
 
 # ----------------------------------------------------------------------------- live

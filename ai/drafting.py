@@ -1,16 +1,17 @@
-"""Draft one clause (one AI call) and attach footnote-style references to its sentences.
+"""Draft one clause (one AI call) and attach numbered footnotes that say what each sentence was written from.
 
-Every sentence carries the ids of the library clauses it relies on. Code keeps only ids that were
-really selected, numbers the footnotes in order of first use, and checks that each figure in a
-sentence comes from the request or from a cited reference. A sentence with no reference is marked
-as written by the AI. This is also the path taken when the library has nothing on the subject, so
-the clause is still drafted, but every sentence is flagged for review."""
+Every footnote is a number. A sentence is footnoted with the library clause it relies on, or with a note
+that the AI wrote it without a reference, or with a note that it contains a figure found neither in the
+request nor in the cited references. Code keeps only citations to references that were really selected and
+numbers the footnotes in order of first use. This is also the path taken when the library has nothing on the
+subject: the clause is still drafted, and every sentence carries the "written by the AI" note."""
 import re
 from dataclasses import dataclass, field
 
 from ai.llm import AIStepError, MODEL, structured_call
 
 NO_SOURCE = "none"
+AI_NOTE = "Written by the AI. The library has no reference for this."
 
 DRAFT_PROMPT = """You draft ONE clause for a construction and installation service agreement for a rooftop solar \
 system between an Owner and a Contractor, governed by Thai law. Write clear contract English in the style of the \
@@ -34,6 +35,40 @@ reference that contains it. Otherwise write [*] and let the user fill it in.
 6. Each reference lists known issues. Do not carry those issues into the draft.
 7. Put short points the user should decide or check in notes."""
 
+_WORDS = {w: i for i, w in enumerate(
+    "zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen "
+    "seventeen eighteen nineteen".split())}
+_WORDS.update({"twenty": 20, "thirty": 30, "forty": 40, "fifty": 50, "sixty": 60, "seventy": 70, "eighty": 80,
+               "ninety": 90, "hundred": 100})
+_TENS = {w for w, v in _WORDS.items() if v in range(20, 100)}
+
+
+def numbers_in(text):
+    """Figures in a text, written as digits or as words ('two-year', 'twenty-five' -> 2, 25, 20, 5)."""
+    tokens = re.findall(r"[a-z]+|\d+(?:\.\d+)?", text.lower())
+    values = {float(t) for t in tokens if t[0].isdigit()}
+    for i, t in enumerate(tokens):
+        if t in _WORDS:
+            values.add(float(_WORDS[t]))
+            if t in _TENS and i + 1 < len(tokens) and tokens[i + 1] in _WORDS and 0 < _WORDS[tokens[i + 1]] < 10:
+                values.add(float(_WORDS[t] + _WORDS[tokens[i + 1]]))
+    return values
+
+
+def sentence_figures(sentence):
+    """Figures written as digits in a sentence. Contract style puts digits beside the words."""
+    return re.findall(r"\d+(?:\.\d+)?", sentence)
+
+
+def figures_not_in(sentence, allowed_texts):
+    allowed = set().union(*[numbers_in(t) for t in allowed_texts]) if allowed_texts else set()
+    return sorted({f for f in sentence_figures(sentence) if float(f) not in allowed}, key=float)
+
+
+def unsupported_numbers(sentence, request, source_texts):
+    """Figures in the sentence that appear neither in the request nor in the cited references."""
+    return figures_not_in(sentence, [request, *source_texts])
+
 
 @dataclass
 class DraftSentence:
@@ -46,10 +81,9 @@ class DraftSentence:
 @dataclass
 class Footnote:
     number: int
-    ref_id: str
-    label: str
-    excerpt: str
-    flags: list
+    kind: str                      # "reference" | "ai" | "figure"
+    text: str
+    ref_id: str = ""
 
 
 @dataclass
@@ -57,17 +91,13 @@ class DraftedClause:
     request: str
     title: str
     sentences: list
-    footnotes: list
     notes: list
     selection: object
+    sources: dict                  # ref id -> Reference, for the references the sentences cite
 
     @property
     def has_references(self):
         return any(s.source_ids for s in self.sentences)
-
-    @property
-    def needs_review(self):
-        return any(not s.source_ids or s.unsupported_numbers for s in self.sentences)
 
 
 _SUPERSCRIPT = str.maketrans("0123456789", "\u2070\u00b9\u00b2\u00b3\u2074\u2075\u2076\u2077\u2078\u2079")
@@ -77,14 +107,38 @@ def superscript(number):
     return str(number).translate(_SUPERSCRIPT)
 
 
-def _numbers(text):
-    return {float(n) for n in re.findall(r"\d+(?:\.\d+)?", text)}
+def plan_footnotes(sentences, sources):
+    """Numbers the footnotes of the given sentences in order of first use. Returns (marks, footnotes) where
+    marks[i] lists the footnote numbers of sentences[i]."""
+    footnotes, numbered, marks = [], {}, []
+
+    def number_for(key, kind, text, ref_id=""):
+        if key not in numbered:
+            numbered[key] = len(numbered) + 1
+            footnotes.append(Footnote(numbered[key], kind, text, ref_id))
+        return numbered[key]
+
+    for s in sentences:
+        sentence_marks = []
+        for rid in s.source_ids:
+            r = sources[rid]
+            flags = f" [{', '.join(r.flags)}]" if r.flags else ""
+            sentence_marks.append(number_for(("ref", rid), "reference", f"{r.label}: \u201c{r.excerpt()}\u201d{flags}", rid))
+        if not s.source_ids:
+            sentence_marks.append(number_for(("ai",), "ai", AI_NOTE))
+        if s.unsupported_numbers:
+            figures = ", ".join(s.unsupported_numbers)
+            sentence_marks.append(number_for(("figure", figures), "figure",
+                                             f"Contains the figure {figures}, which is not in your request or in the cited references."))
+        marks.append(sentence_marks)
+    return marks, footnotes
 
 
-def unsupported_numbers(sentence, request, source_texts):
-    """Figures in the sentence that appear neither in the request nor in the cited references."""
-    allowed = _numbers(request).union(*[_numbers(t) for t in source_texts]) if source_texts else _numbers(request)
-    return sorted({n for n in re.findall(r"\d+(?:\.\d+)?", sentence) if float(n) not in allowed})
+def render_footnoted(drafted):
+    """(text, footnote_lines): the clause with a superscript number after each sentence, and the numbered notes."""
+    marks, footnotes = plan_footnotes(drafted.sentences, drafted.sources)
+    text = " ".join(s.text + ",".join(superscript(n) for n in m) for s, m in zip(drafted.sentences, marks))
+    return text, [f"{superscript(f.number)} {f.text}" for f in footnotes]
 
 
 def draft_schema(ids):
@@ -134,40 +188,15 @@ def validate_draft(request, raw, selection, refs):
             basis = "ai_written"
         elif basis == "ai_written":
             basis = "adapted"
-        bad = unsupported_numbers(text, request, [refs[i].text for i in ids])
-        sentences.append(DraftSentence(text, ids, basis, bad))
+        sentences.append(DraftSentence(text, ids, basis,
+                                       unsupported_numbers(text, request, [refs[i].text for i in ids])))
     if not sentences:
         raise AIStepError("The model returned an empty clause; try again.")
-
-    footnotes, numbered = [], {}
-    for s in sentences:
-        for rid in s.source_ids:
-            if rid not in numbered:
-                numbered[rid] = len(numbered) + 1
-                r = refs[rid]
-                footnotes.append(Footnote(numbered[rid], rid, r.label, r.excerpt(), r.flags))
-    return DraftedClause(request, raw.get("title", "").strip() or "New clause", sentences, footnotes, notes, selection)
+    sources = {rid: refs[rid] for s in sentences for rid in s.source_ids}
+    return DraftedClause(request, raw.get("title", "").strip() or "New clause", sentences, notes, selection, sources)
 
 
 def draft_clause(request, selection, refs, client, model=MODEL):
     raw = structured_call(client, model, DRAFT_PROMPT, build_prompt(request, selection, refs),
                           "clause_draft", draft_schema(selection.ids()))
     return validate_draft(request, raw, selection, refs)
-
-
-def render_footnoted(drafted):
-    """(text, footnote_lines): the clause with superscript markers after each sentence, and the notes."""
-    number = {f.ref_id: f.number for f in drafted.footnotes}
-    pieces = []
-    for s in drafted.sentences:
-        marks = ",".join(superscript(number[i]) for i in s.source_ids) if s.source_ids else "\u2020"
-        if s.unsupported_numbers:
-            marks += "\u2021"
-        pieces.append(f"{s.text}{marks}")
-    lines = [f"{superscript(f.number)} {f.label}: \u201c{f.excerpt}\u201d" + (f" [{', '.join(f.flags)}]" if f.flags else "")
-             for f in drafted.footnotes]
-    if any(not s.source_ids for s in drafted.sentences):
-        lines.append("\u2020 Written by the AI. The library has no reference for this sentence; review it carefully.")
-    if any(s.unsupported_numbers for s in drafted.sentences):
-        lines.append("\u2021 Contains a figure that is not in your request or in the cited references; verify it.")
-    return " ".join(pieces), lines

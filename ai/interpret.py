@@ -131,7 +131,9 @@ candidate_clause_key, candidate_provision_quote (verbatim from that clause's tex
 sentence), and candidate_change (the user's request restated for that provision, in the same direction, \
 without inventing figures). A candidate is only a question for the user; it is not confirmed. Offer at \
 most one candidate per request. If nothing is reasonably related, set candidate_clause_key to "none" and \
-the other candidate fields to empty strings.
+the other candidate fields to empty strings. If an earlier reply of yours already listed a request as "Not \
+covered by the clause library", reuse exactly the same wording for "request" and the same "evidence", so the \
+user sees one stable list instead of rephrased copies.
 
 Rules for every item:
 - "evidence" must be copied verbatim from a user message or from a term sheet value, in its original \

@@ -224,6 +224,11 @@ def test_prompt_includes_full_clause_text():
     assert "Payable upon completion of installation of the inverter" in user
 
 
+def test_prompt_asks_for_stable_wording_of_unmapped_requests():
+    from ai.interpret import SYSTEM_PROMPT
+    assert "reuse exactly the same wording" in SYSTEM_PROMPT and "Not covered by the clause library" in SYSTEM_PROMPT
+
+
 def test_prompt_follows_the_chosen_caps():
     client = FakeClient(empty())
     ts = sample_term_sheet()
