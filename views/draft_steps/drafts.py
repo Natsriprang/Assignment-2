@@ -46,3 +46,12 @@ def kept():
 def drafted_for_library():
     return [{"key": f"drafted_{entry_id}", "title": drafted.title, "sentences": drafted.sentences,
              "before": placement_of(entry_id, drafted)} for entry_id, drafted in kept()]
+
+
+def forget(entry_id):
+    """Drops a rejected request's draft and every choice made about it."""
+    st.session_state.get(DRAFTS_KEY, {}).pop(entry_id, None)
+    st.session_state.get(PLACEMENT_STORE, {}).pop(entry_id, None)
+    st.session_state.get(KEEP_STORE, {}).pop(entry_id, None)
+    st.session_state.pop(keep_key(entry_id), None)
+    st.session_state.pop(placement_key(entry_id), None)

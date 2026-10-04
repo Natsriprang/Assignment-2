@@ -25,6 +25,7 @@ from views.draft_steps import drafts, flow
 STATE_KEY = "draft_included"
 DEVIATIONS_KEY = "draft_deviations"
 DRAFTS_KEY = drafts.DRAFTS_KEY       # request id -> DraftedClause
+REQUEST_SEQ_KEY = "new_clause_request_seq"   # last request id handed out; ids are never reused
 REQUESTS_KEY = "new_clause_requests"  # [{"id": int, "text": str}] in the order the requests were first raised
 STEP_NAME = "interpret"
 
@@ -78,17 +79,31 @@ def request_id(text):
                 and numbers_in(e["text"]) == numbers_in(text)):
             e["text"] = text
             return e["id"]
-    entries.append({"id": len(entries) + 1, "text": text})
-    return entries[-1]["id"]
+    seq = max([st.session_state.get(REQUEST_SEQ_KEY, 0)] + [e["id"] for e in entries]) + 1
+    st.session_state[REQUEST_SEQ_KEY] = seq
+    entries.append({"id": seq, "text": text})
+    return seq
 
 
-def new_clause_requests(result):
+def request_reject_key(text):
+    return f"request:{normalize(text)}"
+
+
+def reject_request(msg, entry_id, text):
+    """Reject button callback for a request: its draft and choices are dropped and the model is told on the next
+    analysis. Its number is not reused."""
+    msg.setdefault("rejected", {})[request_reject_key(text)] = f"New clause request: {text}"
+    st.session_state[REQUESTS_KEY] = [e for e in st.session_state.get(REQUESTS_KEY, []) if e["id"] != entry_id]
+    drafts.forget(entry_id)
+
+
+def new_clause_requests(result, rejected=None):
     """[(id, text)] for the new-clause requests to show, in the order they were first raised: the ones in this
     result that match no clause, plus every request that already has a draft, so a draft never disappears when a
     later reply no longer lists its request."""
     found = {}
     for u in result.unmapped_requests:
-        if not u.candidate_key:
+        if not u.candidate_key and request_reject_key(u.request) not in (rejected or {}):
             found[request_id(u.request)] = u.request
     texts = {e["id"]: e["text"] for e in st.session_state.get(REQUESTS_KEY, [])}
     for entry_id, drafted in st.session_state.get(DRAFTS_KEY, {}).items():
@@ -219,14 +234,14 @@ def render_results(msg, clauses, turn, stale):
     was pressed."""
     result = msg["result"]
     proposals, questions, _ = result_lines(result, list(clauses.values()))
-    requests = new_clause_requests(result)
+    rejected = msg.get("rejected") or {}
+    requests = new_clause_requests(result, rejected)
     quick_reply, draft_request = None, None
 
     st.subheader("What I found")
-    if not (proposals or questions or requests):
+    if not (proposals or questions or requests or rejected):
         st.write("No changes to the standard contract.")
 
-    rejected = msg.get("rejected") or {}
     open_actions = [a for a in result.clause_actions if action_key(a) not in rejected]
     open_deviations = [d for d in result.deviations if deviation_key(d) not in rejected]
 
@@ -282,6 +297,8 @@ def render_results(msg, clauses, turn, stale):
                 st.caption("The library has no matching clause. I can look for references and draft one.")
                 if st.button("Find references and draft this clause", key=widget_key("draft", str(entry_id))):
                     draft_request = (entry_id, text)
+            st.button("Reject", on_click=reject_request, args=(msg, entry_id, text),
+                      key=widget_key("reject_request", str(entry_id)))
 
     if questions:
         st.markdown("**Questions**")
