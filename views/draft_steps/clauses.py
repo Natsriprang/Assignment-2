@@ -7,17 +7,21 @@ import re
 
 import streamlit as st
 
+from ai.drafting import draft_clause, render_footnoted
 from ai.interpret import (InterpretationError, candidate_question, context_summary, interpret_request,
                           result_lines, term_sheet_text, term_sheet_warnings)
-from ai.llm import MODEL, CountingClient, get_client
+from ai.llm import MODEL, AIStepError, CountingClient, get_client
+from ai.references import select_references
 from core.clause_data import build_library
 from core.draft_state import library_for
+from core.reference_library import load_references
 from core.term_sheet_fields import REQUIRED_FIELDS
 from views import clause_sandbox
 from views.draft_steps import flow
 
 STATE_KEY = "draft_included"
 DEVIATIONS_KEY = "draft_deviations"
+DRAFTS_KEY = "clause_drafts"          # request text -> DraftedClause
 STEP_NAME = "interpret"
 
 
@@ -45,6 +49,43 @@ def show_lines(lines):
 def has_analysis():
     """True once the model has analysed the request at least once in this run."""
     return any(c["step"] == STEP_NAME for c in st.session_state.get(flow.CALLS_KEY, []))
+
+
+@st.cache_resource
+def get_references():
+    return load_references()
+
+
+def kept_drafts():
+    """Drafted new clauses the user chose to keep, for the next step to merge into the contract."""
+    return [d for request, d in st.session_state.get(DRAFTS_KEY, {}).items()
+            if st.session_state.get(widget_key("keep", request), True)]
+
+
+def show_lines_caption(lines):
+    for line in lines:
+        st.caption(plain(line))
+
+
+def render_draft(drafted):
+    text, footnotes = render_footnoted(drafted)
+    with st.container(border=True):
+        st.markdown(f"**Proposed new clause: {plain(drafted.title)}**")
+        if not drafted.has_references:
+            st.warning("No reference in the library for this request. The AI wrote the clause itself; "
+                       "review it carefully.")
+        elif drafted.needs_review:
+            st.info("Some sentences are marked \u2020 or \u2021 and need a closer look.")
+        st.write(plain(text))
+        show_lines_caption(footnotes)
+        if drafted.selection.picks:
+            with st.expander("Why these references"):
+                for p in drafted.selection.picks:
+                    st.caption(plain(f"{p.ref_id}: {p.reason}"))
+        if drafted.notes:
+            with st.expander("Points to decide or check"):
+                show_lines(f"- {n}" for n in drafted.notes)
+        st.checkbox("Keep this draft for the next step", value=True, key=widget_key("keep", drafted.request))
 
 
 def apply_proposals(msg):
@@ -86,7 +127,7 @@ def render_latest(msg, clauses, turn, stale):
     summary, plus any questions. Returns a quick-reply text if a Yes/No button was pressed."""
     result = msg["result"]
     proposals, questions, uncovered = result_lines(result, list(clauses.values()))
-    quick_reply = None
+    quick_reply, draft_request = None, None
 
     if not (proposals or questions or uncovered):
         st.write("I found no changes to the standard contract.")
@@ -125,8 +166,13 @@ def render_latest(msg, clauses, turn, stale):
         st.button("Apply selected changes", type="primary", on_click=apply_proposals, args=(msg,),
                   disabled=stale, key=widget_key("apply", str(turn)))
 
-    if uncovered:
-        show_lines(uncovered)
+    for i, u in enumerate(u for u in result.unmapped_requests if not u.candidate_key):
+        show_lines([f"Not covered by the clause library: {u.request}"])
+        drafted = st.session_state.get(DRAFTS_KEY, {}).get(u.request)
+        if drafted:
+            render_draft(drafted)
+        elif st.button("Find references and draft this clause", key=widget_key("draft", str(turn), str(i))):
+            draft_request = u.request
 
     if questions:
         st.markdown("**I need to check something:**")
@@ -145,7 +191,7 @@ def render_latest(msg, clauses, turn, stale):
         with st.expander("Automatic checks"):
             st.caption("Proposals the system discarded because they were invalid or changed nothing.")
             show_lines(f"- {n}" for n in result.notes)
-    return quick_reply
+    return quick_reply, draft_request
 
 
 def render():
@@ -200,13 +246,33 @@ def render():
                      "sheet itself, for example whether the roof owner is a different party from the Owner.")
             skip = st.button("No special requests \u2014 just check the term sheet", disabled=client is None)
 
-    quick_reply = None
+    quick_reply, draft_request = None, None
     for i, msg in enumerate(chat):
         with st.chat_message(msg["role"]):
             if msg["role"] == "assistant" and i == last_idx:
-                quick_reply = render_latest(msg, clauses, len(chat), stale)
+                quick_reply, draft_request = render_latest(msg, clauses, len(chat), stale)
             else:
                 show_lines(msg["content"].split("\n"))
+
+    if client is not None and draft_request:
+        with st.chat_message("assistant"):
+            with st.spinner("Finding references and drafting..."):
+                error = None
+                try:
+                    refs = get_references()
+                    selection = select_references(draft_request, refs,
+                                                  CountingClient(client, calls, "select_references"), MODEL)
+                    drafted = draft_clause(draft_request, selection, refs,
+                                           CountingClient(client, calls, "draft_clause"), MODEL)
+                except (AIStepError, FileNotFoundError) as e:
+                    error = str(e)
+                except Exception as e:
+                    error = f"The API call failed: {e}"
+            if error:
+                st.error(error)
+            else:
+                st.session_state.setdefault(DRAFTS_KEY, {})[draft_request] = drafted
+                st.rerun()
 
     if client is None:
         st.info("Enter an OpenAI API key in the sidebar to start.")

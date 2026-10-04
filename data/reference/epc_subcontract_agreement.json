@@ -1,0 +1,293 @@
+{
+  "id": "epc_subcontract_agreement",
+  "title": "Subcontract construction and installation service agreement for a rooftop PV facility (EPC, anonymised)",
+  "provenance": "The author's own contract, already anonymised by the author for the parties. Contract price, building names and dates were removed when preparing this file. File: EPC_Contractor_Agreement_EN_Anonymized.docx.",
+  "rights_note": "Not a public document. Confirm you are allowed to share it before the repository is shared.",
+  "language": "en",
+  "governing_law": "Thailand",
+  "party_labels": {
+    "Owner": "the Owner (itself a contractor to a Project Owner)",
+    "Contractor": "the subcontractor"
+  },
+  "differences_from_target": [
+    "A subcontract: the Owner has a main contract with a Project Owner, which the app's template does not have.",
+    "Payment is by detailed milestones with acceptance conditions and a 5% retention.",
+    "Adds clauses the app's current library lacks: warranty, fraudulent acts, the Owner's rights after termination.",
+    "More Owner-favourable on termination, delay damages (0.1% per day, uncapped) and payment suspension."
+  ],
+  "scrubs": [
+    {
+      "what": "contract price and building totals",
+      "count": 3
+    },
+    {
+      "what": "instalment amounts",
+      "count": 10
+    },
+    {
+      "what": "building names",
+      "count": 1
+    },
+    {
+      "what": "building names (2)",
+      "count": 1
+    },
+    {
+      "what": "start date",
+      "count": 1
+    },
+    {
+      "what": "completion date",
+      "count": 1
+    }
+  ],
+  "edits": [
+    "Clause 3: the second building's table, identical to the first, was replaced by one line."
+  ],
+  "clauses": [
+    {
+      "id": "epc-preamble",
+      "article": "preamble",
+      "title": "Title, parties and recitals",
+      "category": "preamble",
+      "our_clause": null,
+      "gap": false,
+      "quality_notes": [
+        "Three-tier structure: the Owner has its own contract with a Project Owner."
+      ],
+      "text": "SUBCONTRACT CONSTRUCTION AND INSTALLATION SERVICE AGREEMENT\nfor the Photovoltaic Solar Power Rooftop Facility\n[*] with [*] kWp\nContract No.: [*]\nThis subcontract construction and installation service agreement (the “Agreement”) is made on [*] (the “Date of this Agreement”) at [*].\nBetween:\n• [*], a company incorporated under the laws of [*], having the company registration number [*], whose registered head office is at [*], hereinafter referred to as the “Owner”; and\n• [*], a company incorporated under the laws of Thailand, having the company registration number [*], whose registered head office is at [*], hereinafter referred to as the “Contractor”.\nThe Owner and the Contractor are hereinafter collectively referred to as the “Parties” and individually as a “Party”.\nWHEREAS\n(1) The Owner has entered into an agreement for the construction and installation of a photovoltaic solar power system on the rooftop (the “System”) with an installed capacity of [*] kWp with the project owner (the “Project Owner”). The Project is located at [*] (the “Project”). The Owner wishes to engage the Contractor as a subcontractor to carry out the construction and installation of the System and complete the Works for delivery to the Project Owner.\n(2) The Parties wish to enter into this subcontract construction and installation service agreement for the photovoltaic solar power rooftop facility in accordance with the terms and conditions set out in this Agreement.\nThe Parties agree as follows:"
+    },
+    {
+      "id": "epc-1",
+      "article": "1",
+      "title": "Construction and installation service agreement",
+      "category": "scope",
+      "our_clause": "construction_terms",
+      "gap": false,
+      "quality_notes": [
+        "The Owner is itself a contractor to a Project Owner, so this is a subcontract (see the recitals)."
+      ],
+      "text": "1.1 The Owner agrees to engage the Contractor, and the Contractor agrees to undertake the construction and installation of the photovoltaic solar power rooftop facility with an installed capacity of [*] kWp (the “Works”) at the Project, in accordance with the terms and conditions of this Agreement and the attachments hereto.\n1.2 The Contractor agrees to supply the labour, tools, equipment and other materials required for the Works, all of which shall be of good quality and safe for use.",
+      "similarity_to_ours": 0.49
+    },
+    {
+      "id": "epc-2",
+      "article": "2",
+      "title": "Attachments to this agreement",
+      "category": "attachments",
+      "our_clause": "attachments",
+      "gap": false,
+      "quality_notes": [
+        "2.3: if the attachments conflict, the Owner's decision is final and the Contractor has no claim."
+      ],
+      "text": "2.1 The following documents shall be considered an integral part of this Agreement:\n• Attachment 1: Quotation No. [*], dated [*];\n• Attachment 2: Bill of quantities, prices of materials and equipment, and labour (BOQ), dated [*];\n• Attachment 3: Scope of Work.\n2.2 In the event of any discrepancy or inconsistency between the provisions of this Agreement and any Attachment, the provisions of this Agreement shall prevail.\n2.3 In the event of any discrepancy or inconsistency among the Attachments, the Contractor shall comply with the determination of the Owner, and such determination shall be final. The Contractor shall have no right to claim any additional Contract Price, damages or expenses from the Owner arising from such discrepancy or inconsistency.",
+      "similarity_to_ours": 0.54
+    },
+    {
+      "id": "epc-3",
+      "article": "3",
+      "title": "Contract price and terms of payment",
+      "category": "payment",
+      "our_clause": "price_payment",
+      "gap": true,
+      "quality_notes": [
+        "Five milestone instalments per building, each with acceptance conditions, which is much more detailed than the app's template.",
+        "3.2 retention of 5% for one year after handover, or a bank guarantee; 3.3 a failed first grid synchronisation voids the retention claim and gives 30 days to rectify.",
+        "3.7 lets the Owner suspend payment when it considers the Contractor unable or failing to perform.",
+        "The second building's identical table was collapsed to one line (see edits)."
+      ],
+      "text": "3.1 The Owner agrees to pay the Contractor the fixed total Contract Price of THB [AMOUNT] ([*]) (the “Contract Price”), exclusive of value-added tax (VAT), divided between the two buildings and payable in five (5) installments for each building as set out below.\nBuilding [BUILDING A]: THB [AMOUNT]\n| Installment | % | Amount (THB) | Condition / Payment Due |\n| --- | --- | --- | --- |\n| 1 | 20 | [AMOUNT] | Payable upon completion of the following and the Owner’s acceptance: (1) execution of this Agreement by the Parties; (2) receipt of the purchase order (PO); (3) submission of the Single Line Diagram and Plan Layout for the construction and installation Works to the Owner for approval; (4) completion of the mounting installation; and (5) submission of photographs of the completed Works together with the Progress/Inspection Report to the Owner. |\n| 2 | 25 | [AMOUNT] | Payable upon completion of the following and the Owner’s acceptance: (1) construction of the inverter room at the installation area together with the Inverter Rack; (2) installation of the inverter, DC fuse box, Solar MDB and CB; (3) completion of the AC system installation; and (4) submission of photographs of the completed Works together with the Progress/Inspection Report to the Owner. |\n| 3 | 20 | [AMOUNT] | Payable upon completion of the following and the Owner’s acceptance: (1) completion of installation of the PV Modules; and (2) submission of photographs of the completed Works together with the Progress/Inspection Report to the Owner. |\n| 4 | 25 | [AMOUNT] | Payable upon completion of the following and the Owner’s acceptance: (1) installation and commissioning of the Weather Station and relevant signal transmission equipment; (2) submission of the complete As-Built Drawings signed by an engineer, together with a copy of the engineer’s professional licence; (3) completion of the Monitoring System in accordance with the Owner’s installation standards; (4) completion of all System installation Works and acceptance by the Owner; and (5) submission of photographs of the completed Works together with the Progress/Inspection Report to the Owner. |\n| 5 | 10 | [AMOUNT] | Payable upon completion of the following and the Owner’s acceptance: (1) completion of the Commissioning Test and submission of the commissioning report; (2) completion of all post-construction rectification items in the Owner’s punch list; (3) cleaning of the PV Modules before handover; (4) completion of electrical connection and grid interconnection testing; and (5) Final Acceptance. |\nBuilding [BUILDING B]: THB [AMOUNT]\n[The same five-installment table applies to this building.]\n3.2 The Contractor agrees to provide retention in the amount of five percent (5%) of the total Contract Price. The Contractor authorises the Owner to deduct such amount from each installment payable under this Agreement. The Contractor shall be entitled to receive the retention amount upon expiry of one (1) year from the date of handover of all Works under this Agreement, or upon delivery to the Owner of a bank guarantee in an amount equal to five percent (5%) of the total Contract Price.\n3.3 If the first synchronisation of the System with the electricity grid (the “First Sync”) fails to satisfy the criteria prescribed by the relevant electricity authority, the Works shall be deemed incomplete and improperly delivered under this Agreement, and the Contractor shall not be entitled to claim the return of the retention under clause 3.2. The Contractor shall rectify the relevant defects within thirty (30) days from the date of receipt of notice from the Owner. If the Contractor fails to complete such rectification within the stipulated period, the Owner may carry out the rectification itself or engage a third party to do so, and the Contractor shall be responsible for all costs incurred.\n3.4 On the date of execution of this Agreement, the Contractor shall provide the following documents:\n• A copy of the company affidavit/certificate of incorporation issued no more than ninety (90) days before the Date of this Agreement, certified as a true copy;\n• A copy of the VAT registration certificate (Por.Por.20), if applicable, certified as a true copy;\n• A copy of the identification card of the authorised signatory, certified as a true copy.\nFor payment of each installment, the Contractor shall provide the following supporting documents:\n• Invoice;\n• Work acceptance certificate issued by the Owner or its representative;\n• Photographs of the completed Works.\n3.5 The Contractor shall submit the payment documents on the first working day of each week. Upon receipt of complete and correct documents in accordance with clause 3.4, the Owner agrees to process payment of the relevant Contract Price within ten (10) days.\n3.6 If the Contractor fails to provide complete payment documents in accordance with clause 3.4, the Owner reserves the right to reject payment of the relevant installment until the Contractor has corrected and completed the payment documents.\n3.7 If the Owner considers that the Contractor has failed, or is unable, to perform any obligation under this Agreement for any reason, the Owner may suspend all or part of any payment due under this Agreement until the Contractor has properly performed its obligations.",
+      "similarity_to_ours": 0.1
+    },
+    {
+      "id": "epc-4",
+      "article": "4",
+      "title": "Contractor's representations and warranties",
+      "category": "representations",
+      "our_clause": "contractor_representations",
+      "gap": false,
+      "quality_notes": [
+        "4.2 no foreign workers; 4.7 and 4.8 planning and daily, weekly and monthly progress reports."
+      ],
+      "text": "4.1 The Contractor warrants that, in performing the Works, it shall employ personnel who possess the knowledge, capability and skills appropriate to their assigned duties and who comply with applicable labour protection laws and other relevant laws.\n4.2 The Contractor warrants that it shall not employ foreign workers to perform the Works for the Owner under this Agreement.\n4.3 If any personnel of the Contractor behaves improperly or performs the Works inefficiently, the Owner shall have the right to request replacement by written notice to the Contractor. The Contractor shall promptly replace such personnel upon receipt of such notice.\n4.4 The Contractor shall not assign or transfer any of its rights or obligations under this Agreement to any third party without the prior consent of the Owner. Any consent given by the Owner shall not release the Contractor from its obligations under this Agreement.\n4.5 Where the Contractor, its personnel and/or its subcontractors or other representatives are required to perform the Works under this Agreement or enter the Project site, the Contractor shall comply strictly with all rules, regulations and orders issued by the Owner and the Project Owner applicable at the relevant premises.\n4.6 The Contractor warrants that, in performing the Works, it shall comply with applicable laws concerning safety, occupational health and the environment and shall take reasonable measures to avoid adverse impacts and unreasonable disturbance to the Owner.\n4.7 The Contractor warrants that it shall manage the Project efficiently, including preparing personnel plans, work schedules and material and equipment delivery plans in accordance with the agreed Scope of Work, and determining working methods consistent with applicable standards and safety requirements so that the Works are completed in accordance with this Agreement.\n4.8 The Contractor shall report the performance and progress of the Works to the Owner or the Owner’s representative on a daily, weekly and monthly basis.",
+      "similarity_to_ours": 0.14
+    },
+    {
+      "id": "epc-5",
+      "article": "5",
+      "title": "Taxes and statutory fees",
+      "category": "taxation",
+      "our_clause": "taxation",
+      "gap": false,
+      "quality_notes": [
+        "Adds stamp duty and a 14-day deadline to submit evidence of the stamp duty (5.3)."
+      ],
+      "text": "5.1 The Contractor shall be solely responsible for payment of its income taxes, fees, stamp duty and other taxes for which the Contractor is responsible in connection with this Agreement.\n5.2 The Contractor agrees that the Owner may deduct withholding tax from amounts payable under this Agreement (excluding VAT) in accordance with applicable laws, regulations, notifications and orders of the Ministry of Finance, the Director-General of the Revenue Department and other applicable laws, as amended from time to time.\n5.3 The Contractor shall duly affix the stamp duty required by law to this Agreement and submit evidence thereof to the Owner within fourteen (14) days from the Date of this Agreement.",
+      "similarity_to_ours": 0.37
+    },
+    {
+      "id": "epc-6",
+      "article": "6",
+      "title": "Warranty",
+      "category": "warranty",
+      "our_clause": null,
+      "gap": true,
+      "quality_notes": [
+        "Two-year warranty from the Project Owner's acceptance, with repair within 7 days (6.1).",
+        "6.2 penalty of 0.1% of the contract price per day for failing to carry out assigned maintenance."
+      ],
+      "text": "6.1 The Contractor warrants the Works for a period of two (2) years commencing on the date on which the Owner delivers the completed Works under this Agreement to the Project Owner and the Project Owner accepts the Works. During the warranty period, if the rooftop on which the System is installed or the photovoltaic solar power system becomes defective, the Contractor shall repair and restore the relevant defect to normal operating condition within seven (7) days.\n6.2 If the Contractor fails to perform maintenance and repair work for the installed System as assigned by the Owner, the Owner shall have the right to claim a penalty at the rate of 0.1% (zero point one percent) of the Contract Price per day until the Contractor performs such maintenance and repair work or until the Owner exercises its right to terminate this Agreement."
+    },
+    {
+      "id": "epc-7",
+      "article": "7",
+      "title": "Completion deadline",
+      "category": "schedule",
+      "our_clause": "completion_deadline",
+      "gap": false,
+      "quality_notes": [
+        "Delay damages of 0.1% of the contract price per day with no cap, until completion or termination; the app's clause uses 0.05% per day capped at 5%."
+      ],
+      "text": "7.1 The Owner agrees that the Contractor may commence the Works from [START DATE], and the Contractor shall complete the Works by [COMPLETION DATE] in accordance with the Project Schedule.\n7.2 Unless otherwise agreed by the Parties, if the Contractor fails to complete the Works within the period specified in clause 7.1, the Owner shall have the right to claim delay damages at the rate of 0.1% (zero point one percent) of the Contract Price per day until completion of the Works or until the Owner exercises its right to terminate this Agreement.\n7.3 If there is a material change to the Project site which affects the Contractor’s performance of the Works, the Parties agree to extend the completion period by the period reasonably required to revise the design and/or construction so that the Works are appropriate and sufficiently safe. The Parties shall agree in good faith on the costs of such revision.",
+      "similarity_to_ours": 0.45
+    },
+    {
+      "id": "epc-8",
+      "article": "8",
+      "title": "Responsibility for Contractor's personnel",
+      "category": "personnel",
+      "our_clause": "personnel_responsibility",
+      "gap": true,
+      "quality_notes": [
+        "8.3 the Contractor bears the first deductible and uninsured loss under the Owner's or Project Owner's insurance when its personnel cause damage.",
+        "8.4 workmen's compensation; 8.5 labour disputes and immediate removal of personnel."
+      ],
+      "text": "8.1 The Contractor shall control and supervise its personnel to ensure strict compliance with the rules, regulations and requirements of the Owner and the Project Owner currently in effect or subsequently introduced. The Contractor may appoint a “Coordinator” to direct and coordinate performance under this Agreement.\n8.2 The Contractor shall be responsible for all damage caused by its personnel, whether arising from actions outside their authority or negligence, which causes damage to the Owner.\n8.3 If the Project Owner or the Owner has obtained insurance policies, including fire insurance, accident insurance, third-party liability insurance or other insurance relating to the Owner’s business or Works, and damage arises from an act of the Contractor or its personnel, the Contractor shall be responsible for the first deductible specified in the relevant policy and for any loss not covered by such insurance.\n8.4 The Contractor shall be solely responsible for its personnel under applicable workmen’s compensation laws where its personnel are injured or become ill as a result of performing work for the Owner.\n8.5.1 If any labour issue or labour dispute arises at the Project site in which the Contractor’s personnel are involved or may become involved, the Contractor shall immediately take appropriate action to resolve the situation at the Owner’s premises and restore normal conditions as soon as possible so that the Owner’s work is not interrupted or damaged.\n8.5.2 The Owner shall have the right to immediately remove or return any Contractor personnel if the Owner becomes aware that such personnel has participated in causing or creating a situation, or has conduct reasonably believed to be likely to cause a labour issue, disturbance or conflict among workers, without prior notice or investigation.",
+      "similarity_to_ours": 0.38
+    },
+    {
+      "id": "epc-9",
+      "article": "9",
+      "title": "Confidentiality and use of information",
+      "category": "confidentiality",
+      "our_clause": "confidentiality",
+      "gap": false,
+      "quality_notes": [
+        "9.7 confidentiality survives indefinitely."
+      ],
+      "text": "9.1 The Contractor shall preserve the interests of the Owner and shall not collaborate, assist or provide advice to any person in a manner that causes damage to the Owner, adversely affects the Owner’s interests or competes with the Owner’s business, whether directly or indirectly and by any means.\n9.2 Unless otherwise agreed in writing by the other Party, each Party shall keep the details and contents of this Agreement confidential and shall not disclose them to any third party, except:\n• to the extent necessary for the performance of a duty or exercise of a legal right arising from this Agreement;\n• to the Party’s group companies or affiliates to the extent necessary for performance of this Agreement;\n• where disclosure is required by law, regulation, Stock Exchange requirements or any competent authority, including disclosure to the Party’s insurer, auditor or consultant; or\n• to a competent court in connection with any applicable legal proceedings.\n9.3 The confidentiality obligations in clause 9.2 shall not apply to:\n• information that is publicly known other than as a result of a breach of a confidentiality obligation;\n• confidential information already in the possession of the receiving Party; or\n• information received from a third party without breach of any confidentiality obligation.\n9.4 The Contractor acknowledges that it may have access to Confidential Information in any form, including designs, details, specifications, plans, documents, information, printed materials, copies, photographs, maps, charts, computer software, diagrams, formulas, inventions, technology and know-how used in the Owner’s business, as well as information obtained by the Contractor in connection with this Agreement. This includes information disclosed orally or which is reasonably understood to be proprietary to the Owner and information relating to the Owner’s business, commercial and marketing processes.\n9.5 The Parties agree that the information described in this clause 9 constitutes “Confidential Information” and is a material term of this Agreement.\n9.6 The Contractor shall keep Confidential Information confidential and shall use it only for communication, consultation, discussion and coordination with persons designated by the Owner and solely for purposes related to the Works. If the Owner requests the Contractor to cease using any Confidential Information, the Contractor shall immediately cease using such information and/or return it to the Owner and shall not retain or make any copy thereof by any means.\n9.7 The Parties agree that the Contractor’s confidentiality obligations concerning the Owner’s Confidential Information shall survive indefinitely, whether or not the Contractor continues to perform work for the Owner. If the Contractor breaches such obligations during the Works, the Owner shall have the right to terminate this Agreement and withhold any Contract Price due at the time of the breach and any subsequent Contract Price.",
+      "similarity_to_ours": 0.55
+    },
+    {
+      "id": "epc-10",
+      "article": "10",
+      "title": "Responsibility for fraudulent acts",
+      "category": "liability",
+      "our_clause": null,
+      "gap": true,
+      "quality_notes": [
+        "Compensation for actual loss; payment within 15 days or deduction from amounts payable or from security without prior notice."
+      ],
+      "text": "10.1 If the Contractor, its personnel or its representatives commits, omits or participates in any fraudulent act, whether intentionally or negligently, causing loss or damage to the Owner or any third party, including damage to person and/or property, the Contractor shall be responsible for compensating the Owner or such third party for the actual loss or damage incurred.\n10.2 The Contractor agrees to pay such damages to the Owner within fifteen (15) days from the date on which the Contractor receives notice from the Owner and/or authorises the Owner to deduct such damages from amounts payable to the Contractor and/or recover such damages from any security provided by the Contractor under this Agreement, without prior notice."
+    },
+    {
+      "id": "epc-11",
+      "article": "11",
+      "title": "Suspension of works",
+      "category": "suspension",
+      "our_clause": "suspension",
+      "gap": false,
+      "quality_notes": [],
+      "text": "11.1 At any time, the Owner may require the Contractor to suspend all or part of the Works in the event of force majeure, an emergency or a necessity of the Owner that prevents the Contractor from accessing or performing work at the Project site during the relevant period. During the suspension, the Parties shall protect and maintain the Works to the extent reasonably possible to prevent loss or damage, and the Owner shall notify the Contractor of the suspension in writing.\n11.2 If the suspension arises from the necessity of the Owner, the Owner shall consider a reasonable extension of the completion period and the Contractor may claim necessary expenses from the Owner.\n11.3 If the suspension arises from a cause attributable to the Contractor, the Contractor may request a reasonable extension of the completion period, and the Owner may claim any resulting damages from the Contractor.",
+      "similarity_to_ours": 0.57
+    },
+    {
+      "id": "epc-12",
+      "article": "12",
+      "title": "Inspection of works",
+      "category": "inspection",
+      "our_clause": "inspection",
+      "gap": false,
+      "quality_notes": [],
+      "text": "The Owner, its advisor or its representative shall have the right to inspect the performance of the Contractor’s personnel or Coordinator at any time and may provide instructions or notify the Contractor of any requirement to comply strictly with this Agreement, including a request to replace any personnel or the Contractor’s Coordinator. The Contractor shall cooperate with such request and shall not claim any damages or additional expenses arising therefrom.",
+      "similarity_to_ours": 0.47
+    },
+    {
+      "id": "epc-13",
+      "article": "13",
+      "title": "Discrepancy in work drawings and specifications",
+      "category": "drawings",
+      "our_clause": "drawing_discrepancy",
+      "gap": false,
+      "quality_notes": [
+        "13.2 adjusts the price on a change of scope agreed between the Project Owner and the Owner."
+      ],
+      "text": "13.1 The Contractor warrants that it has thoroughly reviewed and understood the drawings and specifications. If any error arising from engineering or technical principles, or any defect in the Contractor’s documents, is found, the Contractor shall comply with the determination of the Owner, the supervising engineer or the consultant appointed by the Owner in order to complete the Works. Such determination shall be final, and the Contractor shall not be entitled to claim any additional Contract Price, damages or expenses from the Owner or request an extension of the contractual period as a result thereof.\n13.2 If the Project Owner and the Owner agree to change the Scope of Work and such change affects the value of the Works and the Contract Price, the Parties agree to adjust the Contract Price based on the actual value of the Works performed.",
+      "similarity_to_ours": 0.39
+    },
+    {
+      "id": "epc-14",
+      "article": "14",
+      "title": "Breach and termination",
+      "category": "termination",
+      "our_clause": "termination",
+      "gap": false,
+      "quality_notes": [
+        "Breach includes anticipated failure ('reasonably certain'); the Owner may terminate immediately without prior notice and may use a replacement contractor.",
+        "Much more Owner-favourable than the app's clause, which gives notice and cure periods."
+      ],
+      "text": "14.1 The Contractor shall be deemed to be in breach of this Agreement if any of the following circumstances occurs or is reasonably certain to occur:\n• the Contractor is unable to complete the Works within the stipulated period;\n• the Contractor breaches any provision of this Agreement;\n• it is reasonably certain that the Works will be defective or will otherwise be performed in breach of any provision of this Agreement;\n• it is reasonably certain that the Contractor will be unable to complete the Works within the stipulated period;\n• the Contractor becomes subject to an absolute receivership order or becomes bankrupt;\n• the Contractor fails or refuses to comply with an instruction of the Owner’s acceptance committee; or\n• the Contractor is wholly unable to continue performing the Works under this Agreement.\n14.2 Upon the occurrence of a breach under clause 14.1, the Owner shall have the right to terminate this Agreement immediately and may engage a third party to perform the Works in place of the Contractor without prior notice. The Contractor shall be responsible for all costs and damages incurred by the Owner.\n14.3 If the Contractor is in breach under clause 14.1 and the Owner has not exercised its right to terminate this Agreement, the Owner may, in addition to any other rights under this Agreement:\n• continue the Works itself or engage a third party to continue the Works until completion, with the Contractor responsible for any additional costs;\n• claim the costs of supervision where the Owner must supervise the Works itself or engage a third party to do so;\n• withhold or deduct all amounts of the Contract Price that are due or will become due; and\n• forfeit all or part of the retention and/or performance security provided by the Contractor under this Agreement, without prior notice, to cover costs, penalties and damages arising from the performance of this Agreement.\n14.4 A Party shall not be deemed in breach where it is unable to perform its obligations due to force majeure.\n14.5 Exercise of the right to terminate this Agreement shall not prejudice the Owner’s right to claim damages from the Contractor.\n14.6 The Owner’s failure to exercise its termination right shall not release the Contractor from its obligations or liabilities under this Agreement. Neither Party shall be released from its obligations under this Agreement merely because of increased costs or other economic impacts arising from performance of its obligations.",
+      "similarity_to_ours": 0.16
+    },
+    {
+      "id": "epc-15",
+      "article": "15",
+      "title": "Owner's rights following termination",
+      "category": "termination",
+      "our_clause": "termination",
+      "gap": false,
+      "quality_notes": [
+        "Overlaps with 14.3: use of the Contractor's equipment, recovery of replacement and supervision costs, withholding and forfeiture of retention or security."
+      ],
+      "text": "15.1 Upon the Owner exercising its right to terminate this Agreement, the Owner may perform the Works itself or engage a third party to continue and complete the Works. The Owner shall have the following rights:\n• the Owner or any person engaged to continue the Works may use construction tools and equipment, temporary works and construction materials that the Owner considers necessary to be retained for completion of the Works;\n• the Owner may recover from the Contractor the costs of engaging a replacement contractor and the costs of materials and equipment required to complete the Works;\n• the Owner may recover the costs of supervision incurred by the Owner in supervising the Works itself or engaging a third party to supervise the completion of the Works; and\n• the Owner may withhold or deduct all amounts of the Contract Price that are due or will become due and forfeit all or part of the retention and/or performance security provided by the Contractor under this Agreement, without prior notice, to cover the costs, penalties and damages arising from the performance or completion of the Works.",
+      "similarity_to_ours": 0.14
+    },
+    {
+      "id": "epc-16",
+      "article": "16",
+      "title": "Force majeure",
+      "category": "force_majeure",
+      "our_clause": "force_majeure",
+      "gap": false,
+      "quality_notes": [
+        "Termination after 180 consecutive days, with a 365-day condition (16.4); the same structure as the CA."
+      ],
+      "text": "16.1 Subject to the limitations set out in this Agreement, if a Force Majeure event prevents either Party from performing any obligation, in whole or in part, under this Agreement, the affected Party shall notify the other Party of the Force Majeure event and all relevant details as soon as reasonably practicable after its occurrence. The affected obligations shall be suspended or excused to the extent affected by the Force Majeure event.\n16.2 “Force Majeure” means any event, condition or circumstance beyond the reasonable control of the Party claiming Force Majeure, without the fault or negligence of that Party, which causes delay or difficulty in performing any obligation under this Agreement, even if the affected Party has made reasonable efforts to prevent the event or mitigate its effects, including:\n• lightning, storms, floods or unusually severe weather conditions;\n• earthquake, landslide or other unforeseeable natural disaster relating to geography or land;\n• protests, strikes or labour disputes;\n• war (whether declared or not), invasion, terrorist acts, embargo, civil unrest, rebellion, panic, riot or sabotage by national enemies;\n• land expropriation, compulsory seizure or intervention in the System, the Project site, any material property or rights of either Party, or any act, omission or failure by a government authority;\n• any change in law or governmental action which prevents a Party from performing its obligations under this Agreement; or\n• epidemic.\n16.3 In the event of Force Majeure, the affected Party shall:\n• immediately notify the other Party in writing of the Force Majeure event;\n• have the right to temporarily suspend the affected obligations under this Agreement, only to the extent and for the period during which performance is prevented by the Force Majeure event;\n• use reasonable efforts to remedy the relevant circumstances and resume performance as soon as practicable;\n• report periodically to the other Party regarding the Force Majeure event and the measures taken to remedy it; and\n• give written notice upon resumption of performance after the Force Majeure event ends.\n16.4 If a Force Majeure event affects performance of this Agreement and continues for one hundred and eighty (180) consecutive days, either Party may terminate this Agreement without such termination constituting a default, provided that the affected Party can demonstrate that the Force Majeure event cannot be remedied within one hundred and eighty (180) days and continues to have an effect for more than three hundred and sixty-five (365) days.",
+      "similarity_to_ours": 0.45
+    },
+    {
+      "id": "epc-17",
+      "article": "17",
+      "title": "Notice",
+      "category": "notices",
+      "our_clause": "notice",
+      "gap": false,
+      "quality_notes": [],
+      "text": "17.1 For the purpose of effective communication and notification under this Agreement, the Parties shall designate the relevant contact persons and addresses as follows:\n| | Owner | Contractor |\n| --- | --- | --- |\n| Contact person | [*] | [*] |\n| Position | [*] | [*] |\n| Address | [*] | [*] |\n| Phone / email | [*] | [*] |\n17.2 Any communication delivered to the contact person or address specified above shall be deemed a valid notice to the receiving Party under this Agreement. If any contact person or address is changed, the relevant Party shall promptly notify the other Party in writing or by facsimile, and the amended contact details shall thereafter be used for communications between the Parties.",
+      "similarity_to_ours": 0.34
+    },
+    {
+      "id": "epc-18",
+      "article": "18",
+      "title": "Miscellaneous",
+      "category": "general",
+      "our_clause": "miscellaneous",
+      "gap": false,
+      "quality_notes": [
+        "Negotiation between senior representatives; there is no court or arbitration clause. Thai law governs."
+      ],
+      "text": "18.1 If one or more provisions of this Agreement become invalid, void or voidable for any reason, such invalidity, voidness or voidability shall not affect the validity and enforceability of the remaining provisions, which shall continue in full force and effect.\n18.2 Any amendment to this Agreement shall be made in writing and signed by both Parties in order to be effective.\n18.3 Any waiver or extension of time for performance of an obligation under this Agreement shall be made in writing. Any failure or delay by a Party in exercising any right under this Agreement shall not constitute a waiver of that right.\n18.4 In the event of any dispute arising out of or in connection with this Agreement or any breach thereof, the Parties shall first seek an amicable resolution through formal negotiations between senior representatives of the Parties. The Contractor shall continue to perform its obligations under this Agreement while the Parties are negotiating and seeking an amicable resolution.\n18.5 This Agreement shall be governed by and construed in accordance with the laws of Thailand.",
+      "similarity_to_ours": 0.6
+    }
+  ]
+}

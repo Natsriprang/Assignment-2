@@ -1,0 +1,383 @@
+{
+  "id": "th_gov_construction_contract",
+  "title": "Thai government standard form: construction contract (English version)",
+  "provenance": "Standard form for Thai government agencies, issued under the public procurement rules. The English version was translated from the Thai original with GPT and supplied by the app's author. File: 1_3_Construction_Contract_English.docx.",
+  "rights_note": "Official form published under public procurement rules. The Thai Copyright Act, section 7, treats regulations, notifications and orders of government agencies as outside copyright, so reuse should be possible. Verify, and take the Thai original from the official source.",
+  "language": "en",
+  "governing_law": "Thailand (public procurement)",
+  "party_labels": {
+    "Employer": "the Owner (a Thai government agency in the original)",
+    "Contractor": "the Contractor"
+  },
+  "version_note": "Appears to be the form before the revision announced for 22 September 2026: it lacks the serious-danger termination ground. Check against the current official form.",
+  "differences_from_target": [
+    "Written for a government agency as Employer, so it favours the Employer heavily: the Employer's rulings are final, the Contractor bears most risks and cannot claim extra time or money in many cases.",
+    "Contains public-procurement items that do not apply to a private contract: Thai vessels (Clause 22), skilled labour standards (Clause 23), direct payment from the Treasury.",
+    "Has both unit-price and lump-sum versions of the payment and time clauses.",
+    "Useful for clauses the app's template lacks: performance security, advance payment, retention, defects liability, variations, recovery of damages, site clean-up."
+  ],
+  "scrubs": [],
+  "edits": [],
+  "clauses": [
+    {
+      "id": "gov-preamble",
+      "article": "preamble",
+      "title": "Parties and date (form header)",
+      "category": "preamble",
+      "our_clause": null,
+      "gap": false,
+      "quality_notes": [
+        "Written for a government agency as the Employer. Numbers in brackets point to the notes entry."
+      ],
+      "text": "CONSTRUCTION CONTRACT AGREEMENT\nContract No. [...] (1)\nThis Contract is made at [...]\nSub-district/Khwaeng [...] District/Khet [...]\nProvince [...] on the [...] day of [...], B.E. [...]\nBETWEEN [...] (2)\nrepresented by [...] (3)\n(hereinafter referred to as the “Employer”) of the one part;\nAND [...] (4A),\na juristic person registered at [...],\nhaving its registered office at [...],\nrepresented by [...],\nthe person authorised to bind the juristic person as evidenced by the certificate issued by the\nOffice of the Registrar of Partnerships and Companies dated [...] (5)\n(and the Power of Attorney dated [...]), attached hereto;\n(6) In the case where the Contractor is an individual, the following shall be used:\nAND [...] (4B),\nresiding at [...]\nSub-district/Khwaeng [...] District/Khet [...]\nProvince [...], holder of National Identification Card No. [...],\nas evidenced by the copy of the National Identification Card attached hereto,\n(hereinafter referred to as the “Contractor”) of the other part.\nThe Employer and the Contractor agree as follows:"
+    },
+    {
+      "id": "gov-1",
+      "article": "1",
+      "title": "Scope of work",
+      "category": "scope",
+      "our_clause": "construction_terms",
+      "gap": false,
+      "quality_notes": [
+        "Contractor supplies labour, materials, tools and equipment, as in the app's template."
+      ],
+      "text": "The Employer agrees to employ and the Contractor agrees to undertake the work of [...] (7),\nat [...]\nSub-district/Khwaeng [...] District/Khet [...]\nProvince [...], in accordance with the terms and conditions of this Contract\nand the documents attached hereto. The Contractor shall provide suitable labour, materials, tools,\nequipment and all other items necessary for the performance of the Works under this Contract.",
+      "similarity_to_ours": 0.39
+    },
+    {
+      "id": "gov-2",
+      "article": "2",
+      "title": "Contract documents",
+      "category": "attachments",
+      "our_clause": "attachments",
+      "gap": false,
+      "quality_notes": [
+        "Conflicts between annexes are resolved by the Employer's final ruling with no extra payment; the EPC subcontract has the same rule."
+      ],
+      "text": "The following documents attached hereto shall form an integral part of this Contract:\n2.1 Appendix 1 – Drawings [...] Number of pages [...]\n2.2 Appendix 2 – Specifications/Details [...] Number of pages [...]\n2.3 Appendix 3 – Bill of Quantities and Prices [...] Number of pages [...]\n2.4 Appendix 4 – Quotation [...] Number of pages [...]\n[...] etc. [...]\nIf any provision contained in an attachment conflicts or is inconsistent with this Contract, the provisions\nof this Contract shall prevail. If the attachments conflict with one another, the Contractor shall comply\nwith the Employer’s determination. The Employer’s determination shall be final, and the Contractor\nshall have no right to claim any additional payment, damages or expenses from the Employer.",
+      "similarity_to_ours": 0.26
+    },
+    {
+      "id": "gov-3",
+      "article": "3",
+      "title": "Performance security",
+      "category": "security",
+      "our_clause": null,
+      "gap": true,
+      "quality_notes": [
+        "Types of security are listed in note (8). The security must stay valid until the Contractor is released, be topped up if it falls in value, and is returned without interest.",
+        "The app's template has no performance security clause."
+      ],
+      "text": "At the time of execution of this Contract, the Contractor has provided a performance security in the\nform of [...] (8), in the amount of Baht [...]\n([...]), equivalent to [...] percent (9)\n([...]) of the Contract Price, to the Employer as security for the due performance of this Contract.\n(10) Where the Contractor provides a bank guarantee as the performance security, such bank guarantee\nshall be issued by a bank carrying on business in Thailand, or by a finance company or securities finance\ncompany duly authorised to conduct finance and guarantee business in accordance with the notifications\nof the Bank of Thailand and in accordance with the form prescribed by the competent government procurement authority.\nAn electronic bank guarantee may be provided in accordance with the procedures prescribed by the Comptroller General’s Department.\nThe guarantee shall remain valid until the Contractor has been released from all obligations under this Contract.\nThe performance security shall remain sufficient to cover all liabilities of the Contractor throughout the Contract period.\nIf the security is reduced, becomes impaired, or ceases to cover the Contractor’s liabilities for any reason, including\nwhere delay in completion causes the completion date or the expiry date of the Contractor’s defects liability to change,\nthe Contractor shall provide a replacement or additional security sufficient to restore the required amount within [...]\n([...]) days from the date of receipt of written notice from the Employer.\nThe performance security provided under this Clause shall be returned to the Contractor without interest when the\nContractor has been released from all obligations and liabilities under this Contract."
+    },
+    {
+      "id": "gov-4A",
+      "article": "4A",
+      "title": "Contract price and payment: unit-price contract",
+      "category": "payment",
+      "our_clause": "price_payment",
+      "gap": false,
+      "quality_notes": [
+        "Payment is by measured quantity; unit prices fall to 90% beyond 125% and 83% beyond 150% of the estimate, and an overhead allowance applies below 75%.",
+        "Probably not suitable for a lump-sum rooftop solar contract."
+      ],
+      "text": "The Employer agrees to pay and the Contractor agrees to accept the Contract Price of Baht [...]\n([...]), inclusive of Value Added Tax in the amount of Baht [...]\n([...]), together with all other taxes and expenses.\nThe unit prices specified in the Bill of Quantities and Prices attached as Appendix 3 shall apply.\nThe Parties acknowledge that the quantities stated in the construction schedule or Bill of Quantities and Prices\nare estimates only. The actual quantities may be greater or less than the estimated quantities, and the Employer\nshall pay the Contractor according to the applicable unit price for the quantities actually completed.\nNeither Party shall alter the unit prices or claim compensation merely because the actual quantity differs from\nthe quantity specified in the Contract, except as follows:\n4.1 Where the actual quantity completed exceeds 125% but does not exceed 150% of the quantity specified in the\nContract or Bill of Quantities and Prices, payment shall be made at 90% of the contractual unit price.\n4.2 Where the actual quantity completed exceeds 150% of the quantity specified in the Contract or Bill of Quantities\nand Prices, payment shall be made at 83% of the contractual unit price.\n4.3 Where the actual quantity completed is less than 75% of the quantity specified in the Contract or Bill of Quantities\nand Prices, payment shall be made at the contractual unit price and an additional compensation for Overhead and\nMobilization shall be paid at 17% of the difference between the estimated total quantity of the relevant item and\nthe actual quantity completed, multiplied by the contractual unit price. Such additional compensation shall be paid\nin the final payment.\n4.4 Any additional payment under Clauses 4.1 or 4.2 shall be made in the final payment or, at the Employer’s discretion,\nbefore the final payment, except where the Employer considers that the actual quantity is unrelated to the remaining\nWorks and that the remaining Works do not affect payment for the completed Works. The Employer may make such\nadditional payment together with the relevant progress payment. The determination whether an item falls within\nthese provisions shall be at the Employer’s sole discretion.\nThe Employer shall make monthly payments according to the actual progress of the Works. After the Employer or its\nofficer has inspected the completed Works and found them satisfactory and compliant with this Contract, the Employer\nshall issue a certificate of acceptance to the Contractor. The final payment shall be made only after all Works have\nbeen fully completed, including cleaning and restoring the construction site as required under Clause 20.\nWhere applicable, payment shall be transferred to the Contractor’s bank account specified below, and the Contractor\nshall bear all bank transfer fees and other charges imposed by the bank.",
+      "similarity_to_ours": 0.1
+    },
+    {
+      "id": "gov-4B",
+      "article": "4B",
+      "title": "Contract price and payment: lump-sum contract",
+      "category": "payment",
+      "our_clause": "price_payment",
+      "gap": false,
+      "quality_notes": [
+        "Price includes VAT, unlike the app's template (price excluding VAT).",
+        "The last instalment depends on completion and on cleaning the site (Clause 20)."
+      ],
+      "text": "The Employer agrees to pay and the Contractor agrees to accept the lump-sum Contract Price of Baht [...]\n([...]), inclusive of Value Added Tax in the amount of Baht [...]\n([...]), together with all other taxes and expenses. Payment shall be made by instalments as follows:\nInstalment 1: Baht [...] ([...]), upon completion of [...]\nwithin [...]\nInstalment 2: Baht [...] ([...]), upon completion of [...]\nwithin [...]\n[...] etc. [...]\nFinal Instalment: Baht [...] ([...]), upon full and proper completion of all Works\nunder this Contract, including cleaning and restoring the construction site as required under Clause 20.\nPayment shall be transferred to the Contractor’s bank account specified in the Contract. The Contractor shall bear\nany transfer fees, bank charges and other expenses imposed in connection with such transfer.",
+      "similarity_to_ours": 0.15
+    },
+    {
+      "id": "gov-5",
+      "article": "5",
+      "title": "Advance payment",
+      "category": "payment",
+      "our_clause": null,
+      "gap": true,
+      "quality_notes": [
+        "Advance against a guarantee, recovered by deductions from each payment; repayable within 7 days if the contract is terminated.",
+        "The app's template has no advance payment clause."
+      ],
+      "text": "The Employer agrees to pay the Contractor an advance payment of Baht [...] ([...]),\nequivalent to [...] percent ([...]) of the Contract Price specified in Clause 4.\nThe advance payment shall be made after the Contractor has provided security for the advance payment in the form\nof a domestic bank guarantee, electronic bank guarantee or Thai government bond, as applicable, in the full amount\nof the advance payment.\nThe Contractor shall issue a receipt for the advance payment in the form prescribed by the Employer and shall comply\nwith the following conditions concerning the use and repayment of the advance payment:\n5.1 The Contractor shall use the advance payment solely for expenses incurred in performing the Works. If the Contractor\nuses all or any part of the advance payment for any other purpose, the Employer may immediately demand repayment\nor enforce the advance payment security.\n5.2 Upon the Employer’s request, the Contractor shall provide evidence of expenditure of the advance payment within\n15 days from receipt of written notice. If the Contractor fails to provide such evidence within that period, the Employer\nmay immediately demand repayment or enforce the advance payment security.\n5.3(A) For a unit-price Contract, the Employer shall deduct [...] percent ([...]) from each monthly payment\nuntil the advance payment has been fully recovered, except that the entire outstanding balance may be deducted from\nthe final monthly payment.\n5.3(B) For a lump-sum Contract, the Employer shall deduct [...] percent ([...]) from each instalment until the\nadvance payment has been fully recovered, except that the entire outstanding balance may be deducted from the final instalment.\n5.4 Any amount payable by the Contractor to the Employer in settlement of a debt or liability under this Contract shall\nbe deducted from amounts otherwise payable to the Contractor before any deduction for recovery of the advance payment.\n5.5 Upon termination of this Contract, if the outstanding advance payment exceeds the amount otherwise payable to the\nContractor after other deductions, the Contractor shall repay the outstanding amount within 7 days from receipt of written notice.\n5.6 The advance payment security shall be returned in accordance with the extent to which the advance payment has been\nrecovered, subject to the applicable requirements for replacement or reduction of the security."
+    },
+    {
+      "id": "gov-6",
+      "article": "6",
+      "title": "Retention",
+      "category": "payment",
+      "our_clause": null,
+      "gap": true,
+      "quality_notes": [
+        "Percentage deducted from each payment; the Contractor may swap the retention for a bank guarantee; returned without interest with the final payment.",
+        "The EPC subcontract retains 5% for one year after handover."
+      ],
+      "text": "From each payment due to the Contractor, the Employer shall retain [...] percent ([...]) as retention.\nWhen the retained amount reaches not less than Baht [...] ([...]), the Contractor may request\nrelease of the retention by providing a bank guarantee or electronic bank guarantee issued by a domestic bank as security\nin substitution for the retained amount. The Employer shall return the retention and/or substitute bank guarantee without\ninterest together with the final payment, subject to the terms of this Contract."
+    },
+    {
+      "id": "gov-7A",
+      "article": "7A",
+      "title": "Time for completion and Employer's right to terminate (durations)",
+      "category": "schedule",
+      "our_clause": "completion_deadline",
+      "gap": false,
+      "quality_notes": [
+        "Termination triggers include late or doubtful completion, any breach, absolute receivership or bankruptcy, and ignoring the inspection committee's instructions. Termination does not affect damages.",
+        "Does not contain the serious-danger termination ground that a September 2026 revision reportedly added, so this may be the earlier form."
+      ],
+      "text": "Within [...] ([...]) days from the date following execution of this Contract, the Contractor shall submit a work programme\nsatisfactory to the Employer, showing the sequence of Works and the time required for the principal activities.\nThe Contractor shall commence the Works within [...] ([...]) days from the date following receipt of the notice to proceed\nand shall complete the Works within [...] ([...]) days thereafter.\nIf the Contractor fails to submit the work programme, fails to commence the Works within the prescribed period, fails or is\nunable to complete the Works within the prescribed period, or there is reason to believe that completion will be delayed,\nor if the Contractor breaches any provision of this Contract, becomes subject to an absolute receivership order or bankruptcy,\nor fails to comply with an instruction of the inspection committee, supervising officer or consultant duly appointed by the Employer,\nthe Employer shall have the right to terminate this Contract and to engage another contractor to complete the Works.\nTermination shall not prejudice the Employer’s right to claim damages from the Contractor. The Employer’s failure to exercise\nthe right of termination shall not release the Contractor from its liabilities under this Contract.",
+      "similarity_to_ours": 0.25
+    },
+    {
+      "id": "gov-7B",
+      "article": "7B",
+      "title": "Time for completion and Employer's right to terminate (fixed dates)",
+      "category": "schedule",
+      "our_clause": "completion_deadline",
+      "gap": false,
+      "quality_notes": [
+        "Same termination triggers as 7(A), with fixed start and completion dates."
+      ],
+      "text": "The Contractor shall commence the Works on [...] day of [...] B.E. [...] and shall complete the Works in full\nby [...] day of [...] B.E. [...] . If the Contractor fails to commence or complete the Works within the prescribed\nperiod, or if there is reason to believe that completion will be delayed, or if the Contractor breaches any provision of this Contract,\nbecomes subject to an absolute receivership order or bankruptcy, or fails to comply with an instruction of the inspection committee,\nsupervising officer or consultant duly appointed by the Employer, the Employer shall have the right to terminate this Contract and\nengage another contractor to complete the Works. Termination shall not prejudice the Employer’s right to claim damages.\nThe Employer’s failure to exercise the right of termination shall not release the Contractor from its liabilities under this Contract.",
+      "similarity_to_ours": 0.23
+    },
+    {
+      "id": "gov-8",
+      "article": "8",
+      "title": "Liability for defects",
+      "category": "warranty",
+      "our_clause": null,
+      "gap": true,
+      "quality_notes": [
+        "Rectification at the Contractor's cost; the Employer may rectify at the Contractor's cost if the Contractor does not act, and may act at once in urgent cases.",
+        "Note (20): the defects liability period should normally be at least two years from acceptance.",
+        "The app's template has no defects clause."
+      ],
+      "text": "After the Works have been fully completed and accepted by the Employer from the Contractor or a replacement contractor,\nif any defect or damage arising from the Works occurs within [...] ([...]) years and [...] ([...]) months from the date\nof acceptance, and such defect or damage is attributable to the Contractor’s use of improper materials, defective workmanship\nor failure to comply with recognised engineering or technical standards, the Contractor shall promptly rectify the defect\nwithout delay and at its own cost.\nIf the Contractor fails to commence such rectification within [...] ([...]) days from receipt of written notice from the Employer,\nor fails to complete the rectification within the period specified by the Employer, the Employer may carry out the rectification\nitself or engage another person to do so, at the Contractor’s cost.\nIn an urgent case where prompt rectification is necessary and the Employer cannot wait for the Contractor to act within the period\nspecified above, the Employer may carry out or procure the rectification itself, at the Contractor’s cost.\nAny action taken by the Employer or another person shall not release the Contractor from its liability. If the Contractor fails to\nreimburse the costs or damages demanded by the Employer, the Employer may enforce the performance security."
+    },
+    {
+      "id": "gov-9",
+      "article": "9",
+      "title": "Subcontracting",
+      "category": "assignment_subcontracting",
+      "our_clause": "contractor_representations",
+      "gap": true,
+      "quality_notes": [
+        "Written approval needed; approval does not release the Contractor; penalty for unauthorised subcontracting (note (21): at least 10% of the subcontracted value).",
+        "The app's template only restricts transfer of the Contractor's rights and obligations."
+      ],
+      "text": "The Contractor shall not subcontract all or any part of the Works without the Employer’s prior written approval, except to the extent\nexpressly permitted in writing by the Employer. Any approval shall not release the Contractor from any liability or obligation under\nthis Contract, and the Contractor shall remain fully liable for the acts, omissions and negligence of its subcontractors and their agents\nor employees.\nIf the Contractor subcontracts any part of the Works in breach of this Clause, the Contractor shall pay a penalty to the Employer\nat the rate of [...] percent ([...]) of the value of the subcontracted Works, without prejudice to the Employer’s right to terminate.",
+      "similarity_to_ours": 0.16
+    },
+    {
+      "id": "gov-10",
+      "article": "10",
+      "title": "Contractor's supervision",
+      "category": "supervision",
+      "our_clause": "personnel_responsibility",
+      "gap": false,
+      "quality_notes": [
+        "A full-time representative with written authority; the Employer approves and may demand replacement at no cost and with no extension of time."
+      ],
+      "text": "The Contractor shall supervise the Works diligently, efficiently and competently. During performance of the Works, the Contractor\nshall appoint a full-time representative responsible for supervising the Works. Such representative shall be duly authorised by the Contractor.\nAny instruction or advice given by the Employer, the inspection committee, supervising officer or consultant appointed by the Employer\nto such representative shall be deemed to have been given to the Contractor.\nThe appointment shall be made in writing and shall be subject to the Employer’s prior written approval. The Contractor shall not replace\nor appoint a new representative without the Employer’s prior written approval.\nThe Employer may require the Contractor to replace the representative by written notice. The Contractor shall promptly make the replacement\nwithout any additional payment or extension of time.",
+      "similarity_to_ours": 0.17
+    },
+    {
+      "id": "gov-11",
+      "article": "11",
+      "title": "Contractor's liability",
+      "category": "liability",
+      "our_clause": "personnel_responsibility",
+      "gap": true,
+      "quality_notes": [
+        "The Contractor repairs damage to the Works even if caused by force majeure until final acceptance, and defends and reimburses the Employer for third-party claims. Strongly one-sided.",
+        "The app's template has no third-party liability or indemnity clause."
+      ],
+      "text": "The Contractor shall be liable for any accident, damage or danger arising from the Contractor’s performance of the Works and for any\ndamage caused by its employees, agents or subcontractors, if any.\nThe Contractor shall be responsible for any damage to the Works, even where such damage results from Force Majeure, and shall repair\nor replace the damaged Works at its own cost, except to the extent caused by the Employer’s fault.\nThis liability shall cease upon the Employer’s final acceptance of the Works, except for liability for defects or damage under Clause 8.\nThe Contractor shall also be liable to third parties for any damage arising from the acts or omissions of the Contractor, its employees,\nagents or subcontractors. If the Employer is demanded, sued or required to pay damages to a third party, the Contractor shall, at its own\ncost, take all necessary steps to defend and hold the Employer harmless and shall immediately reimburse the Employer for such damages\nand all related costs and expenses.",
+      "similarity_to_ours": 0.19
+    },
+    {
+      "id": "gov-12",
+      "article": "12",
+      "title": "Payment of employees",
+      "category": "personnel",
+      "our_clause": "personnel_responsibility",
+      "gap": true,
+      "quality_notes": [
+        "The Employer may pay unpaid wages from contract money; the Contractor must insure all workers and hand over the policies on request."
+      ],
+      "text": "The Contractor shall pay its employees at the rates and within the periods agreed with such employees.\nIf the Contractor fails to pay wages or other compensation due to its employees, the Employer may use amounts otherwise payable to\nthe Contractor to make such payments, and such payment shall be deemed payment to the Contractor under this Contract.\nThe Contractor shall procure insurance for all employees engaged in the Works, covering all liabilities of the Contractor, including\nsubcontractors, for compensable injury or death arising from any accident or danger to employees or other persons engaged by the Contractor\nor its subcontractors. The Contractor shall provide the relevant insurance policies and evidence of premium payment upon the Employer’s request.",
+      "similarity_to_ours": 0.22
+    },
+    {
+      "id": "gov-13",
+      "article": "13",
+      "title": "Inspection of the Works",
+      "category": "inspection",
+      "our_clause": "inspection",
+      "gap": false,
+      "quality_notes": [],
+      "text": "Where the Employer appoints an inspection committee, supervising officer or consultant to supervise the Contractor’s performance,\nsuch persons shall have the right to enter factories and construction sites at any time to inspect the Works. The Contractor shall provide\nreasonable facilities and assistance for such inspection.\nThe appointment of an inspection committee, supervising officer or consultant shall not relieve the Contractor from any responsibility or liability under this Contract.",
+      "similarity_to_ours": 0.22
+    },
+    {
+      "id": "gov-14",
+      "article": "14",
+      "title": "Errors or discrepancies in drawings and specifications",
+      "category": "drawings",
+      "our_clause": "drawing_discrepancy",
+      "gap": false,
+      "quality_notes": [
+        "The Employer's ruling is final and the Contractor cannot claim extra money or time."
+      ],
+      "text": "The Contractor warrants that it has thoroughly inspected and understood the drawings and specifications. If any drawing or specification\nis erroneous or inconsistent with engineering or technical principles, the Contractor agrees to comply with the determination of the Employer,\ninspection committee, supervising officer or consultant appointed by the Employer so as to complete the Works.\nSuch determination shall be final. The Contractor shall not claim any additional payment, damages or expenses, or request an extension of time,\nas a result thereof.",
+      "similarity_to_ours": 0.25
+    },
+    {
+      "id": "gov-15",
+      "article": "15",
+      "title": "Employer's supervision",
+      "category": "supervision",
+      "our_clause": "inspection",
+      "gap": false,
+      "quality_notes": [
+        "The Employer's supervisors may order corrections, changes, additions and omissions and may stop work temporarily; no extension of time or damages for the delay."
+      ],
+      "text": "The inspection committee, supervising officer or consultant appointed by the Employer shall have authority to inspect and supervise the Works\nto ensure compliance with this Contract and may order the Contractor to correct, vary, add to or omit any part of the Works.\nIf the Contractor refuses or fails to comply, the Employer, inspection committee, supervising officer or consultant may order the relevant Works\nto be suspended temporarily. Any resulting delay shall not entitle the Contractor to an extension of time or compensation.",
+      "similarity_to_ours": 0.17
+    },
+    {
+      "id": "gov-16",
+      "article": "16",
+      "title": "Variations and rectification",
+      "category": "variations",
+      "our_clause": null,
+      "gap": true,
+      "quality_notes": [
+        "Employer may order extra work in writing within the general scope; contract rates apply, otherwise agreed or set by the Employer, and the Contractor must proceed meanwhile.",
+        "The app's template only has a short price-adjustment item for changes (3.5)."
+      ],
+      "text": "The Employer may by written instruction require the Contractor to perform special work not shown or included in the Contract Documents,\nprovided that such work falls within the general scope and purpose of this Contract. The Employer may also instruct changes or amendments\nto the drawings and specifications.\nThe rates or prices specified in this Contract shall apply to all additional, varied or omitted Works. Where no applicable rate or price is\nspecified, the Employer and Contractor shall agree a new rate or price and any corresponding extension of time, if applicable.\nIf the Parties cannot agree, the Employer shall determine a reasonable and proper rate or price, and the Contractor shall proceed with the\ninstruction pending such determination in order to avoid damage to the Works."
+    },
+    {
+      "id": "gov-17",
+      "article": "17",
+      "title": "Penalty",
+      "category": "schedule",
+      "our_clause": "completion_deadline",
+      "gap": false,
+      "quality_notes": [
+        "Daily amount in baht, plus daily supervision costs; further damages are allowed above the penalty. There is no cap in the form.",
+        "Note (22): the daily rate is 0.01% to 0.10% of the value of the works; the app's template uses 0.05% per day capped at 5%.",
+        "The translation calls this a 'penalty'; the app's template calls its clause 'liquidated damages'. Whether the two are interchangeable under Thai law should be checked against a Thai-law source."
+      ],
+      "text": "If the Contractor fails to complete the Works within the time specified in this Contract and the Employer has not terminated the Contract,\nthe Contractor shall pay a daily penalty of Baht [...] ([...]) and, where applicable, daily supervision costs\nof Baht [...] ([...]) where the Employer is required to engage an additional supervising officer.\nThe penalty and supervision costs shall accrue from the day following the contractual completion date or any extended completion date until\nthe date on which the Works are actually completed.\nThe Contractor shall also be liable for any additional damages arising from delay to the extent such damages exceed the penalty and supervision costs.\nIf, before termination, the Employer considers that the Contractor will be unable to continue performing the Contract, the Employer may terminate\nthe Contract and exercise the rights under Clause 18. Where the Employer has demanded payment of the penalty after the completion date,\nthe Employer may continue to impose the penalty until the date of termination.",
+      "similarity_to_ours": 0.15
+    },
+    {
+      "id": "gov-18",
+      "article": "18",
+      "title": "Employer's rights following termination",
+      "category": "termination",
+      "our_clause": "termination",
+      "gap": false,
+      "quality_notes": [
+        "Employer may complete the work itself, use the Contractor's equipment and materials, forfeit the performance security and recover extra costs and supervision costs."
+      ],
+      "text": "Upon termination, the Employer may complete the Works itself or engage another person to complete them. The Employer or such person may use\nconstruction equipment, temporary works, structures and materials which, in the Employer’s reasonable opinion, should be retained for completion\nof the Works.\nThe Employer may forfeit or enforce all or part of the performance security as it considers appropriate. The Contractor shall be liable for any\ndamages exceeding the performance security, including additional costs of completing the Works and additional supervision costs, which the Employer\nmay deduct from retention or any amount otherwise payable to the Contractor.",
+      "similarity_to_ours": 0.09
+    },
+    {
+      "id": "gov-19",
+      "article": "19",
+      "title": "Recovery of penalties, damages and costs",
+      "category": "remedies",
+      "our_clause": null,
+      "gap": true,
+      "quality_notes": [
+        "Payment within a stated number of days after notice, then set-off against payments, retention or the performance security; the Contractor pays any shortfall."
+      ],
+      "text": "If the Contractor fails to comply with any provision of this Contract for any reason, resulting in penalties, damages or costs incurred by the Employer,\nthe Contractor shall pay such penalties, damages or costs in full within [...] ([...]) days from receipt of written notice from the Employer.\nIf the Contractor fails to make full payment within such period, the Employer may immediately deduct the relevant amount from payments due to the\nContractor, the retention, or enforce the performance security.\nIf the amounts recovered are insufficient, the Contractor shall pay the outstanding balance within [...] ([...]) days from receipt of written notice.\nAny remaining balance from amounts withheld shall be returned to the Contractor."
+    },
+    {
+      "id": "gov-20",
+      "article": "20",
+      "title": "Site cleanliness and restoration",
+      "category": "site",
+      "our_clause": null,
+      "gap": true,
+      "quality_notes": [],
+      "text": "The Contractor shall keep the work site, including factories and facilities used by the Contractor, its employees, agents or subcontractors,\nclean, safe and fit for use throughout the Contract period. Upon completion, the Contractor shall remove all equipment, materials, waste, refuse\nand temporary structures and shall level and restore the ground so that the entire site is clean and ready for immediate use."
+    },
+    {
+      "id": "gov-21",
+      "article": "21",
+      "title": "Waiver or reduction of penalty and extension of time",
+      "category": "force_majeure",
+      "our_clause": "force_majeure",
+      "gap": false,
+      "quality_notes": [
+        "The Contractor must give written notice with evidence within 15 days after the cause ends, otherwise the right to relief is treated as waived (unless the Employer was at fault or knew)."
+      ],
+      "text": "Where delay is caused by the Employer’s fault or default, Force Majeure, circumstances for which the Contractor is not legally responsible,\nor any other circumstance prescribed by ministerial regulation issued under the law governing public procurement and supplies administration,\nand the Contractor is thereby unable to complete the Works within the contractual period, the Contractor shall notify the Employer in writing\nwith supporting evidence to request waiver or reduction of the penalty or an extension of time within 15 days from the date on which the relevant\nevent ceases, or within such other period prescribed by the applicable ministerial regulation.\nFailure to comply shall constitute an unconditional waiver of the Contractor’s right to request a waiver or reduction of penalty or an extension of time,\nexcept where the delay results from the Employer’s fault or default which is clearly evidenced or was known to the Employer from the outset.\nAny waiver, reduction or extension shall be subject to the Employer’s discretion.",
+      "similarity_to_ours": 0.09
+    },
+    {
+      "id": "gov-22",
+      "article": "22",
+      "title": "Use of Thai vessels",
+      "category": "public_procurement",
+      "our_clause": null,
+      "gap": false,
+      "quality_notes": [
+        "Specific to Thai public procurement; probably not applicable to a private rooftop solar contract."
+      ],
+      "text": "If, in performing this Contract, the Contractor is required to order or import goods, including tools and equipment, from outside Thailand,\nwhether directly or through an agent or other person, and such goods are required to be transported by sea on a route served by Thai vessels\ncapable of providing the required carriage service as prescribed by the Minister of Transport, the Contractor shall arrange for the goods to be\ncarried from abroad to Thailand by a Thai vessel or a vessel having equivalent rights, unless permission has first been obtained from the Marine\nDepartment to use another vessel or the goods fall within an exemption prescribed by the Minister of Transport.\nUpon delivery of the Works, where such imported goods are included, the Contractor shall provide the Employer with the Bill of Lading or a copy\nshowing carriage by a Thai vessel or a vessel having equivalent rights.\nWhere the goods were not carried by a Thai vessel or a vessel having equivalent rights, the Contractor shall provide evidence of permission from\nthe Marine Department to use another vessel or evidence of payment of the special fee arising from non-use of a Thai vessel under the applicable law.\nIf the Contractor fails to provide such evidence but requests delivery of the Works before payment, the Employer may accept the Works and defer payment\nuntil the Contractor has fully complied with this Clause."
+    },
+    {
+      "id": "gov-23",
+      "article": "23",
+      "title": "Skilled labour standards",
+      "category": "public_procurement",
+      "our_clause": null,
+      "gap": false,
+      "quality_notes": [
+        "Specific to Thai public procurement; probably not applicable to a private rooftop solar contract."
+      ],
+      "text": "The Contractor agrees as a material condition of this Contract that it shall employ workers who have passed the prescribed skilled-labour standard\ntest administered by [...], or workers holding Vocational Certificate, Higher Vocational Certificate\nor equivalent qualifications from an educational institution recognised by the Office of the Civil Service Commission for government employment,\nat a rate of not less than [...] percent ([...]) in each skilled trade. There shall be at least one (1) skilled worker in each of the following trades:\n23.1 [...]\n23.2 [...]\n[...] etc. [...]\nThe Contractor shall prepare a list showing the total number of workers by trade and skill level, including the names of workers who have passed\nthe skilled-labour standard test or hold the relevant qualifications. The list and supporting evidence shall be submitted to the inspection committee\nor supervising officer before commencement of the Works and shall be available for inspection by the Employer or its officers throughout the Contract period."
+    },
+    {
+      "id": "gov-notes",
+      "article": "notes",
+      "title": "Notes on the use of the form",
+      "category": "notes",
+      "our_clause": null,
+      "gap": false,
+      "quality_notes": [
+        "Useful for risk checks: note (20) defects period, note (21) subcontracting penalty, note (22) penalty rate range, note (23) supervision costs.",
+        "Note (8): the English omits the Thai detail that a cheque or draft may be dated up to 3 working days before use."
+      ],
+      "text": "(1) The contract number shall be stated sequentially for each fiscal year.\n(2) State the name of the government agency which is a juristic person, such as a department or state enterprise.\n(3) State the name and position of the head of the relevant government agency or the person duly authorised to act on its behalf.\n(4) State the Contractor’s name. (A) For a juristic person, such as a registered ordinary partnership, limited partnership or limited company.\n(B) For an individual, state the individual’s name and address.\n(5) This is an additional provision or condition which the government contracting agency may include or omit depending on the facts.\n(6) This is an additional provision or condition which the government contracting agency may include or omit depending on the facts.\n(7) State the Works to be procured.\n(8) “Performance Security” means security provided by the Contractor to the government agency upon execution of the Contract to secure potential\ndamage arising from performance, including: (1) cash; (2) a bank cheque or draft meeting the prescribed dating requirements; (3) a domestic bank guarantee\nin the prescribed form, including an electronic bank guarantee; (4) a guarantee issued by an authorised finance company or securities finance company;\nor (5) Thai government bonds.\n(9) The amount of performance security shall be prescribed in accordance with the applicable Ministry of Finance Regulation on Public Procurement and\nSupplies Administration, B.E. 2560 (2017), Clause 168.\n(10) This is an additional provision or condition which may be included or omitted depending on the facts.\n(11) The percentages specified in the relevant provisions may be adjusted as appropriate.\n(12) This is an additional provision or condition which may be included or omitted depending on the facts.\n(13) This is an additional provision or condition which may be included or omitted depending on the facts.\n(14) This is an additional provision or condition which may be included or omitted depending on the facts.\n(15) This is an additional provision or condition which may be included or omitted depending on the facts.\n(16) Where the contracting government agency considers it necessary and appropriate, the entire monthly payment may be withheld for recovery of the advance payment.\n(17) This is an additional provision or condition which may be included or omitted depending on the facts.\n(18) This is an additional provision or condition which may be included or omitted depending on the facts.\n(19) This is an additional provision or condition which may be included or omitted depending on the facts.\n(20) The defects liability period should normally be not less than two years from the date of acceptance of the construction Works.\n(21) The penalty under Clause 9 for unauthorised subcontracting shall be not less than 10% of the value of the subcontracted Works.\n(22) The penalty under Clause 17 shall be prescribed on a daily basis at a rate between 0.01% and 0.10% of the value of the Works, in accordance with\nClause 162 of the Ministry of Finance Regulation on Public Procurement and Supplies Administration, B.E. 2560 (2017). The applicable rate shall be\ndetermined by the government contracting agency having regard to the price and nature of the procurement and shall have been specified in the invitation documents.\n(23) Where additional supervision costs are payable, the Contractor shall pay the daily amount for the period exceeding the contractual completion period;\nsuch supervision costs do not include supervision costs arising from an extension of the Contract period.\n(24) This is an additional provision or condition which may be included or omitted depending on the facts."
+    }
+  ],
+  "translation": {
+    "method": "machine translation with GPT, from the Thai original",
+    "reviewed_by_a_lawyer": false,
+    "check_done": "Every number (days, percentages, years, rates) in each clause was compared with the Thai original by script; all match, apart from the differences listed in 'known_differences'. The meaning of the wording was not checked.",
+    "known_differences": [
+      "Note (8): the Thai says the cheque or draft must be dated no more than 3 working days before use; the English only says 'meeting the prescribed dating requirements'.",
+      "Clause 5.2: the two 15-day periods in the Thai are merged into one sentence in the English."
+    ]
+  },
+  "translation_note": "Machine-translated, so treat the wording as an aid, not an authority. Thai terms are rendered as: ผู้ว่าจ้าง = Employer, ค่าปรับ = Penalty (the app's template says liquidated damages for a similar clause)."
+}

@@ -38,3 +38,27 @@ def call_summary(log):
     for entry in log:
         counts[entry["step"]] = counts.get(entry["step"], 0) + 1
     return ", ".join(f"{step} \u00d7{n}" for step, n in counts.items())
+
+
+class AIStepError(Exception):
+    """An AI step could not produce a usable result (refusal, cut-off or invalid output)."""
+
+
+def structured_call(client, model, system, user, name, schema):
+    """One chat completion that must return JSON matching `schema`. Returns the parsed dict."""
+    import json
+
+    response = client.chat.completions.create(
+        model=model,
+        messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+        response_format={"type": "json_schema", "json_schema": {"name": name, "strict": True, "schema": schema}},
+    )
+    choice = response.choices[0]
+    if getattr(choice.message, "refusal", None):
+        raise AIStepError(f"The model declined: {choice.message.refusal}")
+    if choice.finish_reason == "length":
+        raise AIStepError("The response was cut off; try again.")
+    try:
+        return json.loads(choice.message.content)
+    except (TypeError, json.JSONDecodeError) as e:
+        raise AIStepError(f"The model returned invalid JSON: {e}")
