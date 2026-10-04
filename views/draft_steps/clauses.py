@@ -165,19 +165,33 @@ def display_text(result, latest):
     return ("I found " if latest else "Earlier reply: ") + ", ".join(parts) + (". The details are below." if latest else ".")
 
 
+def reject_proposal(msg, key, label):
+    """Reject button callback: the proposal is dismissed for this reply and the model is told on the next analysis."""
+    msg.setdefault("rejected", {})[key] = label
+
+
+def content_for_model(msg):
+    """What the model reads for a message. A reply's rejections are added so that it does not propose them again."""
+    rejected = msg.get("rejected") or {}
+    if not rejected:
+        return msg["content"]
+    return msg["content"] + "\n" + "\n".join(f"The user rejected: {label}." for label in rejected.values())
+
+
 def apply_proposals(msg):
     """Apply button callback. Writes the ticked proposals into the draft's selection. Callbacks run
     before the page reruns, which is what allows this to change the checkboxes' state."""
     result = msg["result"]
+    rejected = msg.get("rejected") or {}
     titles = {c.key: c.title for c in build_library()}
     applied = []
     for a in result.clause_actions:
-        if st.session_state.get(action_key(a), a.evidence_verified):
+        if action_key(a) not in rejected and st.session_state.get(action_key(a), a.evidence_verified):
             clause_sandbox.set_clause(STATE_KEY, a.clause_key, a.action == "include")
             verb = "Removed" if a.action == "exclude" else "Added"
             applied.append(f"{verb} clause: {titles[a.clause_key]}")
     deviations = [d for d in result.deviations
-                  if st.session_state.get(deviation_key(d), d.evidence_verified)]
+                  if deviation_key(d) not in rejected and st.session_state.get(deviation_key(d), d.evidence_verified)]
     st.session_state[DEVIATIONS_KEY] = deviations
     applied += [f"Wording change noted for {titles[d.clause_key]}: {d.summary}" for d in deviations]
     msg["applied"] = applied
@@ -212,15 +226,20 @@ def render_results(msg, clauses, turn, stale):
     if not (proposals or questions or requests):
         st.write("No changes to the standard contract.")
 
+    rejected = msg.get("rejected") or {}
+    open_actions = [a for a in result.clause_actions if action_key(a) not in rejected]
+    open_deviations = [d for d in result.deviations if deviation_key(d) not in rejected]
+
     if msg.get("applied") is not None:
         st.success("Applied to the draft.")
         show_lines(f"- {line}" for line in msg["applied"])
-    elif proposals:
+    elif open_actions or open_deviations:
         st.markdown("**Proposed changes**")
-        for a in result.clause_actions:
+        for a in open_actions:
             with st.container(border=True):
                 verb = "Remove" if a.action == "exclude" else "Add"
-                st.markdown(f"#### {verb} clause: {plain(clauses[a.clause_key].title)}")
+                label = f"{verb} clause: {clauses[a.clause_key].title}"
+                st.markdown(f"#### {plain(label)}")
                 source = "You wrote" if a.basis == "comment" else "From the term sheet"
                 st.caption(f"{source}: \u201c{plain(a.evidence)}\u201d")
                 if a.reason.strip() and a.reason.strip().lower() != a.evidence.strip().lower():
@@ -229,9 +248,12 @@ def render_results(msg, clauses, turn, stale):
                 if not a.evidence_verified:
                     st.warning("This quote was not found in your messages. Check it before applying.")
                 st.checkbox("Apply this change", value=a.evidence_verified, key=action_key(a))
+                st.button("Reject", on_click=reject_proposal, args=(msg, action_key(a), label),
+                          key=widget_key("reject", action_key(a)))
 
-        for d in result.deviations:
+        for d in open_deviations:
             with st.container(border=True):
+                label = f"Wording change: {clauses[d.clause_key].title}: {d.summary}"
                 st.markdown(f"#### {plain(clauses[d.clause_key].title)}: {plain(d.summary)}")
                 st.write(f"Wording change: {plain(d.requested_change)}")
                 if d.change_type == "add":
@@ -242,9 +264,13 @@ def render_results(msg, clauses, turn, stale):
                 if not d.evidence_verified:
                     st.warning("This quote was not found in your messages. Check it before applying.")
                 st.checkbox("Keep this request", value=d.evidence_verified, key=deviation_key(d))
+                st.button("Reject", on_click=reject_proposal, args=(msg, deviation_key(d), label),
+                          key=widget_key("reject", deviation_key(d)))
 
         st.button("Apply selected changes", type="primary", on_click=apply_proposals, args=(msg,),
                   disabled=stale, key=widget_key("apply", str(turn)))
+    if rejected:
+        show_lines(f"Rejected: {label}" for label in rejected.values())
 
     stored = st.session_state.get(DRAFTS_KEY, {})
     for entry_id, text in requests:
@@ -384,7 +410,7 @@ def render():
                 try:
                     result = interpret_request(
                         ts, library_for(included, limits), CountingClient(client, calls, STEP_NAME), MODEL,
-                        [{"role": m["role"], "content": m["content"]} for m in chat])
+                        [{"role": m["role"], "content": content_for_model(m)} for m in chat])
                 except InterpretationError as e:
                     error = str(e)
                 except Exception as e:
