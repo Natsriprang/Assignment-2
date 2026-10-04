@@ -19,11 +19,11 @@ from core.figures import numbers_in
 from core.reference_library import load_references
 from core.term_sheet_fields import REQUIRED_FIELDS
 from views import clause_sandbox
-from views.draft_steps import flow
+from views.draft_steps import drafts, flow
 
 STATE_KEY = "draft_included"
 DEVIATIONS_KEY = "draft_deviations"
-DRAFTS_KEY = "clause_drafts_v2"       # request id -> DraftedClause (new key: older sessions stored another shape)
+DRAFTS_KEY = drafts.DRAFTS_KEY       # request id -> DraftedClause
 REQUESTS_KEY = "new_clause_requests"  # [{"id": int, "text": str}] in the order the requests were first raised
 STEP_NAME = "interpret"
 
@@ -96,13 +96,9 @@ def new_clause_requests(result):
 
 
 def kept_drafts():
-    """Drafted new clauses the user kept, for the next step to merge into the contract."""
-    kept = []
-    for entry_id, drafted in sorted(st.session_state.get(DRAFTS_KEY, {}).items()):
-        if st.session_state.get(widget_key("keep", str(entry_id)), True):
-            kept.append({"request": drafted.request, "title": drafted.title, "text": drafted.text,
-                         "references": [r.label for r in drafted.sources.values()]})
-    return kept
+    """Drafted new clauses the user kept, with the position chosen for each, for the next step."""
+    return [{"request": d.request, "title": d.title, "text": d.text, "before": drafts.placement_of(entry_id, d),
+             "references": [r.label for r in d.sources.values()]} for entry_id, d in drafts.kept()]
 
 
 def show_lines_caption(lines):
@@ -110,7 +106,14 @@ def show_lines_caption(lines):
         st.caption(plain(line))
 
 
-def render_draft(entry_id, drafted):
+def drafts_default(options):
+    for candidate in ("force_majeure", "notice"):
+        if candidate in options:
+            return candidate
+    return "end"
+
+
+def render_draft(entry_id, drafted, clauses):
     """The draft, shown inside its request's box."""
     st.markdown(f"**Proposed new clause: {plain(drafted.title)}**")
     if not drafted.selection.found:
@@ -129,7 +132,17 @@ def render_draft(entry_id, drafted):
     if drafted.notes:
         with st.expander("Points to decide or check"):
             show_lines(f"- {n}" for n in drafted.notes)
-    st.checkbox("Keep this draft for the next step", value=True, key=widget_key("keep", str(entry_id)))
+    titles = {c.key: c.title for c in clauses.values() if c.included}
+    options = list(titles) + ["end"]
+    pk = drafts.placement_key(entry_id)
+    if st.session_state.get(pk) not in options:        # also covers a clause that was unticked after the choice
+        wanted = drafts.placement_of(entry_id, drafted)
+        st.session_state[pk] = wanted if wanted in options else drafts_default(options)
+    st.selectbox("Place this clause before", options, key=pk,
+                 format_func=lambda k: "At the end" if k == "end" else titles[k])
+    if drafted.placement_reason:
+        st.caption(plain(f"Suggested by the AI: {drafted.placement_reason}"))
+    st.checkbox("Keep this draft for the next step", value=True, key=drafts.keep_key(entry_id))
 
 
 def display_text(result, latest):
@@ -231,12 +244,12 @@ def render_results(msg, clauses, turn, stale):
         st.button("Apply selected changes", type="primary", on_click=apply_proposals, args=(msg,),
                   disabled=stale, key=widget_key("apply", str(turn)))
 
-    drafts = st.session_state.get(DRAFTS_KEY, {})
+    stored = st.session_state.get(DRAFTS_KEY, {})
     for entry_id, text in requests:
         with st.container(border=True):
             st.markdown(f"#### Request {entry_id}: {plain(text)}")
-            if entry_id in drafts:
-                render_draft(entry_id, drafts[entry_id])
+            if entry_id in stored:
+                render_draft(entry_id, stored[entry_id], clauses)
             else:
                 st.caption("The library has no matching clause. I can look for references and draft one.")
                 if st.button("Find references and draft this clause", key=widget_key("draft", str(entry_id))):
@@ -338,8 +351,9 @@ def render():
                     refs = get_references()
                     selection = select_references(request_text, refs,
                                                   CountingClient(client, calls, "select_references"), MODEL)
+                    order = [(c.key, c.title) for c in clauses.values() if c.included]
                     drafted = draft_clause(request_text, selection, refs,
-                                           CountingClient(client, calls, "draft_clause"), MODEL)
+                                           CountingClient(client, calls, "draft_clause"), MODEL, order)
                 except (AIStepError, FileNotFoundError) as e:
                     error = str(e)
                 except Exception as e:

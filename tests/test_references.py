@@ -38,8 +38,13 @@ def picks(*ids, related=()):
     return {"picks": items}
 
 
-def draft_payload(*sentences, title="Warranty", notes=()):
-    return {"title": title, "sentences": list(sentences), "notes": list(notes)}
+def draft_payload(*sentences, title="Warranty", notes=(), before="force_majeure", reason="Substantive clauses sit before the closing ones."):
+    return {"title": title, "sentences": list(sentences), "notes": list(notes),
+            "placement": {"before": before, "reason": reason}}
+
+
+ORDER = [("construction_terms", "Construction and Installation Service Agreement"), ("price_payment", "Contract Price and Terms of Payment"),
+         ("suspension", "Suspension of Works"), ("force_majeure", "Force Majeure"), ("notice", "Notice"), ("miscellaneous", "Miscellaneous")]
 
 
 def selection_of(*ids, related=()):
@@ -153,9 +158,49 @@ def test_draft_prompt_keeps_the_roles_in_the_request():
     assert "Keep the roles in the request" in DRAFT_PROMPT and "even if a reference gives that right to the Owner" in DRAFT_PROMPT
 
 
-def test_draft_schema_is_plain_sentences():
-    props = draft_schema()["properties"]
-    assert props["sentences"]["items"] == {"type": "string"} and set(props) == {"title", "sentences", "notes"}
+def test_draft_schema_is_plain_sentences_and_a_placement():
+    props = draft_schema(["suspension", "notice"])["properties"]
+    assert props["sentences"]["items"] == {"type": "string"} and set(props) == {"title", "sentences", "notes", "placement"}
+    assert props["placement"]["properties"]["before"]["enum"] == ["suspension", "notice", "end"]
+    assert draft_schema()["properties"]["placement"]["properties"]["before"]["enum"] == ["end"]
+
+
+# ----------------------------------------------------------------------------- where the clause goes
+def test_the_ai_suggestion_is_kept_when_it_names_a_clause_in_the_draft():
+    d = validate_draft("req", draft_payload("Text.", before="suspension", reason="Next to the suspension clause."),
+                       selection_of("ca-6"), REFS, ORDER)
+    assert d.placement_before == "suspension" and d.placement_reason == "Next to the suspension clause." and d.notes == []
+
+
+def test_the_end_of_the_contract_is_a_valid_suggestion():
+    d = validate_draft("req", draft_payload("Text.", before="end"), selection_of("ca-6"), REFS, ORDER)
+    assert d.placement_before == "end" and d.notes == []
+
+
+def test_an_invented_position_falls_back_to_before_force_majeure_with_a_note():
+    d = validate_draft("req", draft_payload("Text.", before="made_up_clause"), selection_of("ca-6"), REFS, ORDER)
+    assert d.placement_before == "force_majeure" and d.placement_reason == "" and any("position" in n for n in d.notes)
+
+
+def test_fallback_when_force_majeure_is_not_in_the_draft():
+    order = [(k, t) for k, t in ORDER if k != "force_majeure"]
+    assert validate_draft("req", draft_payload("T.", before="x"), selection_of(), REFS, order).placement_before == "notice"
+    order = [(k, t) for k, t in order if k != "notice"]
+    assert validate_draft("req", draft_payload("T.", before="x"), selection_of(), REFS, order).placement_before == "end"
+
+
+def test_the_draft_prompt_lists_the_clauses_in_order_and_explains_placement():
+    prompt = build_prompt("add a warranty", selection_of("ca-6"), REFS, ORDER)
+    assert "<clauses>\n- construction_terms | Construction and Installation Service Agreement" in prompt
+    assert prompt.index("- suspension |") < prompt.index("- force_majeure |") < prompt.index("- notice |")
+    assert "placement:" in DRAFT_PROMPT and "boilerplate" in DRAFT_PROMPT
+
+
+def test_draft_clause_sends_the_schema_with_the_clause_keys():
+    client = SequenceClient(draft_payload("Text.", before="notice"))
+    d = draft_clause("req", selection_of(), REFS, client, clause_order=ORDER)
+    enum = client.requests[0]["response_format"]["json_schema"]["schema"]["properties"]["placement"]["properties"]["before"]["enum"]
+    assert enum == [k for k, _ in ORDER] + ["end"] and d.placement_before == "notice"
 
 
 def test_empty_clause_raises():

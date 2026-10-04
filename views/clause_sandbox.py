@@ -12,6 +12,7 @@ from core.clause_params import limits_of
 from core.draft_state import library_for
 from core.render import render_docx
 from core.renumber import renumber_and_render
+from views.draft_steps import drafts
 
 
 def plain(text):
@@ -74,7 +75,7 @@ def render_picker(state_key, noun="draft"):
 
 def render_preview(state_key, noun="draft", download=True):
     """Numbered preview of the selected clauses, with a Word download unless `download` is False."""
-    library = library_for(ensure_state(state_key), current_limits())
+    library = library_for(ensure_state(state_key), current_limits(), drafts.drafted_for_library())
     rendered = renumber_and_render(library)
     st.subheader(f"Preview ({len(rendered)} clauses)")
 
@@ -82,9 +83,8 @@ def render_preview(state_key, noun="draft", download=True):
     if flagged:
         st.warning(f"{len(flagged)} reference(s) may point to a different clause than intended -- "
                    f"review before using this {noun}.")
-        with st.expander("Show flagged references"):
-            for key, text, mention in flagged:
-                st.markdown(f"**{key}**: `{mention}` in \u201c{plain(text[:80])}...\u201d")
+        for key, text, mention in flagged:
+            st.caption(f"{key}: `{mention}` in \u201c{plain(text[:80])}...\u201d")
 
     st.caption("  \u2192  ".join(f"{num}. {c.title}" for num, c, _ in rendered))
 

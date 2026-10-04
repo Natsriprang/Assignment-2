@@ -24,7 +24,11 @@ payments, Thai vessels and skilled-worker quotas.
 5. Figures (amounts, periods, rates, percentages): use a figure only if the request gives it or a reference you were \
 given contains it. Otherwise write [*] and let the user fill it in.
 6. Each reference lists known issues. Do not carry those issues into the draft.
-7. Put short points the user should decide or check in notes."""
+7. Put short points the user should decide or check in notes.
+8. placement: say which existing clause the new clause should sit directly in front of, using its key from the \
+list of clauses, or "end". Substantive clauses go before the boilerplate: force majeure, notice and miscellaneous \
+stay last. If the subject belongs next to a related clause, choose the clause that comes right after that related \
+clause. reason is one short sentence."""
 
 
 @dataclass
@@ -35,6 +39,8 @@ class DraftedClause:
     notes: list
     selection: object
     sources: dict                  # ref id -> Reference, for the references that fit the request
+    placement_before: str = "force_majeure"   # key of the clause this goes in front of, or "end"
+    placement_reason: str = ""
 
     @property
     def text(self):
@@ -47,14 +53,18 @@ class DraftedClause:
         return "References used: " + "; ".join(r.label for r in self.sources.values())
 
 
-def draft_schema():
-    return {"type": "object", "additionalProperties": False, "required": ["title", "sentences", "notes"],
+def draft_schema(clause_keys=()):
+    placement = {"type": "object", "additionalProperties": False, "required": ["before", "reason"],
+                 "properties": {"before": {"type": "string", "enum": list(clause_keys) + ["end"]},
+                                "reason": {"type": "string"}}}
+    return {"type": "object", "additionalProperties": False, "required": ["title", "sentences", "notes", "placement"],
             "properties": {"title": {"type": "string"},
                            "sentences": {"type": "array", "items": {"type": "string"}},
-                           "notes": {"type": "array", "items": {"type": "string"}}}}
+                           "notes": {"type": "array", "items": {"type": "string"}},
+                           "placement": placement}}
 
 
-def build_prompt(request, selection, refs):
+def build_prompt(request, selection, refs, clause_order=()):
     if selection.used:
         blocks, docs_seen, caveats = [], set(), []
         for p in selection.used:
@@ -68,19 +78,38 @@ def build_prompt(request, selection, refs):
         refs_part = "\n\n".join(blocks) + "\n\n<source_caveats>\n" + "\n".join(caveats) + "\n</source_caveats>"
     else:
         refs_part = "(none: the library has nothing on this subject)"
-    return f"<request>\n{request.strip()}\n</request>\n\n<references>\n{refs_part}\n</references>"
+    order = "\n".join(f"- {key} | {title}" for key, title in clause_order) or "(none)"
+    return (f"<request>\n{request.strip()}\n</request>\n\n<references>\n{refs_part}\n</references>\n\n"
+            f"<clauses>\n{order}\n</clauses>")
 
 
-def validate_draft(request, raw, selection, refs):
+def default_placement(keys):
+    for candidate in ("force_majeure", "notice"):
+        if candidate in keys:
+            return candidate
+    return "end"
+
+
+def validate_draft(request, raw, selection, refs, clause_order=()):
     sentences = [s.strip() for s in raw.get("sentences", []) if s.strip()]
     if not sentences:
         raise AIStepError("The model returned an empty clause; try again.")
     notes = [n.strip() for n in raw.get("notes", []) if n.strip()]
     sources = {rid: refs[rid] for rid in selection.ids()}
-    return DraftedClause(request, raw.get("title", "").strip() or "New clause", sentences, notes, selection, sources)
+    keys = [key for key, _ in clause_order]
+    placement = raw.get("placement") or {}
+    before, reason = placement.get("before"), (placement.get("reason") or "").strip()
+    if before != "end" and before not in keys:
+        before, reason = default_placement(keys), ""
+        notes.append("The suggested position did not match a clause in the draft, so the clause was placed "
+                     "before the closing clauses. Choose another position if you prefer.")
+    return DraftedClause(request, raw.get("title", "").strip() or "New clause", sentences, notes, selection, sources,
+                         before, reason)
 
 
-def draft_clause(request, selection, refs, client, model=MODEL):
-    raw = structured_call(client, model, DRAFT_PROMPT, build_prompt(request, selection, refs),
-                          "clause_draft", draft_schema())
-    return validate_draft(request, raw, selection, refs)
+def draft_clause(request, selection, refs, client, model=MODEL, clause_order=()):
+    """`clause_order` is [(key, title)] for the clauses now in the draft, in order; the AI suggests where the new
+    clause should go among them."""
+    raw = structured_call(client, model, DRAFT_PROMPT, build_prompt(request, selection, refs, clause_order),
+                          "clause_draft", draft_schema([key for key, _ in clause_order]))
+    return validate_draft(request, raw, selection, refs, clause_order)
