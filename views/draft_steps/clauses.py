@@ -113,7 +113,8 @@ def new_clause_requests(result, rejected=None):
 
 def kept_drafts():
     """Drafted new clauses the user kept, with the position chosen for each, for the next step."""
-    return [{"request": d.request, "title": d.title, "text": d.text, "before": drafts.placement_of(entry_id, d),
+    return [{"request": d.request, "title": d.title, "text": " ".join(drafts.sentences_of(entry_id, d)),
+             "before": drafts.placement_of(entry_id, d),
              "references": [r.label for r in d.sources.values()]} for entry_id, d in drafts.kept()]
 
 
@@ -129,13 +130,34 @@ def drafts_default(options):
     return "end"
 
 
-def render_draft(entry_id, drafted, clauses):
-    """The draft, shown inside its request's box."""
+def render_draft(entry_id, drafted, clauses, msg, text):
+    """The draft, shown inside its request's box. Edit and Reject sit side by side under the wording; while editing,
+    Save and Cancel take their place."""
     st.markdown(f"**Proposed new clause: {plain(drafted.title)}**")
     if not drafted.selection.found:
         st.warning("No reference in the library for this request. The AI wrote the clause itself; "
                    "review it carefully.")
-    st.write(plain(drafted.text))
+    if drafts.is_editing(entry_id):
+        st.caption("Edit anywhere in the text. Each line becomes its own numbered sentence in the contract: press Enter "
+                   "to start a new one, and clear a line to remove it. The contract changes only when you press Save.")
+        ek = drafts.edit_key(entry_id)
+        if ek not in st.session_state:                      # drawn for the first time, or again after another step
+            st.session_state[ek] = drafts.working_text(entry_id)
+        lines = st.session_state[ek].splitlines() or [""]
+        height = min(600, max(160, 30 * sum(len(line) // 90 + 1 for line in lines) + 40))
+        drafts.set_working(entry_id, st.text_area("Clause wording", key=ek, height=height))   # survives a trip to another step
+        c1, c2, _ = st.columns([1, 1, 8])
+        c1.button("Save", type="primary", on_click=drafts.save_edit, args=(entry_id,), key=widget_key("save_edit", str(entry_id)))
+        c2.button("Cancel", on_click=drafts.cancel_edit, args=(entry_id,), key=widget_key("cancel_edit", str(entry_id)))
+    else:
+        sentences = drafts.sentences_of(entry_id, drafted)
+        if sentences:
+            st.write("\n\n".join(plain(s) for s in sentences))
+        else:
+            st.warning("Every sentence is cleared, so this clause is left out of the contract.")
+        c1, c2, _ = st.columns([1, 1, 6])
+        c1.button("Edit", on_click=drafts.start_edit, args=(entry_id, drafted), key=widget_key("edit_draft", str(entry_id)))
+        c2.button("Reject", on_click=reject_request, args=(msg, entry_id, text), key=widget_key("reject_request", str(entry_id)))
     if drafted.references_line():
         st.caption(plain(drafted.references_line()))
     if drafted.selection.picks:
@@ -292,13 +314,14 @@ def render_results(msg, clauses, turn, stale):
         with st.container(border=True):
             st.markdown(f"#### Request {entry_id}: {plain(text)}")
             if entry_id in stored:
-                render_draft(entry_id, stored[entry_id], clauses)
+                render_draft(entry_id, stored[entry_id], clauses, msg, text)
             else:
                 st.caption("The library has no matching clause. I can look for references and draft one.")
-                if st.button("Find references and draft this clause", key=widget_key("draft", str(entry_id))):
+                find, reject, _ = st.columns([3, 1, 4])
+                if find.button("Find references and draft this clause", key=widget_key("draft", str(entry_id))):
                     draft_request = (entry_id, text)
-            st.button("Reject", on_click=reject_request, args=(msg, entry_id, text),
-                      key=widget_key("reject_request", str(entry_id)))
+                reject.button("Reject", on_click=reject_request, args=(msg, entry_id, text),
+                              key=widget_key("reject_request", str(entry_id)))
 
     if questions:
         st.markdown("**Questions**")
