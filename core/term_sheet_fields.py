@@ -48,6 +48,8 @@ class TermSheet:
     contractor_contact_location: str = ""
     contractor_contact_phone: str = ""
 
+    limits: dict = field(default_factory=dict)   # parameter key -> percent, or None for "no cap"
+
 
 
 REQUIRED_FIELDS = [

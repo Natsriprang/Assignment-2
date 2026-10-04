@@ -219,7 +219,8 @@ def render():
     calls = st.session_state.setdefault(flow.CALLS_KEY, [])
     chat = st.session_state.setdefault("chat", [])
     included = clause_sandbox.ensure_state(STATE_KEY)
-    clauses = {c.key: c for c in build_library()}
+    limits = clause_sandbox.current_limits()
+    clauses = {c.key: c for c in library_for(included, limits)}
 
     for w in term_sheet_warnings(ts):
         st.warning(w)
@@ -289,7 +290,7 @@ def render():
                 error = None
                 try:
                     result = interpret_request(
-                        ts, library_for(included), CountingClient(client, calls, STEP_NAME), MODEL,
+                        ts, library_for(included, limits), CountingClient(client, calls, STEP_NAME), MODEL,
                         [{"role": m["role"], "content": m["content"]} for m in chat])
                 except InterpretationError as e:
                     error = str(e)

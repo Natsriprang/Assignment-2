@@ -134,8 +134,8 @@ def build_library():
             Item("Unless otherwise agreed by the Parties, if the Contractor fails to complete "
                  "the Works within the stipulated deadline as specified in clause 6.1, the Owner "
                  "has the right to claim liquidated damages from the Contractor at the rate of "
-                 "0.05 (zero point zero five) percent of the Contract Price per day but not more "
-                 "than 5 (five) percent of the Contract Price.", refs=[1]),
+                 "0.05 (zero point zero five) percent of the Contract Price per day"
+                 "⟦ld_cap| but not more than {pct} of the Contract Price⟧.", refs=[1]),
         ], category="schedule"),
 
         Clause("personnel_responsibility", "Responsibility to the Personnel of the Contractor", items=[
@@ -287,8 +287,9 @@ def build_library():
             Item("In any case where the Contractor breaches this Agreement or causes damage to "
                  "the Owner, the Contractor agrees that the Owner may deduct the amount of such "
                  "damages or expenses from the performance bond (contract security) or from the "
-                 "remaining Contract Price, provided that the total damages shall not exceed 5% "
-                 "(five percent) of the Contract Price, within 15 (fifteen) days of the "
+                 "remaining Contract Price"
+                 "⟦damages_cap|, provided that the total damages shall not exceed {pct_sym} "
+                 "of the Contract Price⟧, within 15 (fifteen) days of the "
                  "Owner\u2019s written notice to the Contractor."),
         ], category="termination"),
 

@@ -10,6 +10,7 @@ import re
 from dataclasses import dataclass, field
 
 from ai.llm import MODEL
+from core.clause_params import limits_of, limits_text
 
 
 class InterpretationError(Exception):
@@ -167,7 +168,7 @@ def clause_digest(library):
 def term_sheet_text(ts):
     lines = []
     for name in ts.__dataclass_fields__:
-        if name == "installments":
+        if name in ("installments", "limits"):
             continue
         value = getattr(ts, name)
         if value:
@@ -175,6 +176,7 @@ def term_sheet_text(ts):
     for inst in ts.installments:
         if inst.percent or inst.condition or inst.required_docs:
             lines.append(f"installment {inst.number}: {inst.percent}% | {inst.condition} | {inst.required_docs}")
+    lines.append(f"limits: {limits_text(limits_of(ts))}")
     return "\n".join(lines)
 
 

@@ -8,6 +8,7 @@ import streamlit as st
 
 from core.clause_data import build_library
 from core.clauses import cross_reference_scan
+from core.clause_params import limits_of
 from core.draft_state import library_for
 from core.render import render_docx
 from core.renumber import renumber_and_render
@@ -16,6 +17,11 @@ from core.renumber import renumber_and_render
 def plain(text):
     """Escape markdown so placeholders like '[*]' render as literal text, not italic/link syntax."""
     return re.sub(r"([\\`*_\[\]#>|~$<])", r"\\\1", text)
+
+
+def current_limits():
+    """The caps chosen on the term sheet (defaults if none were chosen)."""
+    return limits_of(st.session_state.get("term_sheet"))
 
 
 def checkbox_key(state_key, clause_key):
@@ -68,7 +74,7 @@ def render_picker(state_key, noun="draft"):
 
 def render_preview(state_key, noun="draft", download=True):
     """Numbered preview of the selected clauses, with a Word download unless `download` is False."""
-    library = library_for(ensure_state(state_key))
+    library = library_for(ensure_state(state_key), current_limits())
     rendered = renumber_and_render(library)
     st.subheader(f"Preview ({len(rendered)} clauses)")
 

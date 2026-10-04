@@ -4,6 +4,7 @@ from whatever the term sheet actually contains, with add/remove controls for man
 The Continue button is disabled until every required field is filled (validation gate, no AI)."""
 import streamlit as st
 
+from core.clause_params import PARAMS
 from core.term_sheet_fields import TermSheet, Installment, REQUIRED_FIELDS
 from core.xlsx_parser import parse_xlsx
 from views.draft_steps import flow
@@ -98,6 +99,19 @@ def render():
     c1, c2 = st.columns(2)
     ts.start_date = c1.text_input("Start date", ts.start_date)
     ts.completion_date = c2.text_input("Completion date", ts.completion_date)
+
+    st.subheader("Limits")
+    st.caption("Caps written into the contract. Tick \"No cap\" to take a cap out of the wording.")
+    if not hasattr(ts, "limits"):
+        ts.limits = {}
+    for p in PARAMS.values():
+        current = ts.limits.get(p.key, p.default)
+        c1, c2 = st.columns([3, 2])
+        no_cap = c2.checkbox("No cap", value=current is None, key=f"limit_none_{p.key}_{v}") if p.allow_none else False
+        percent = c1.number_input(p.label, min_value=0.01, max_value=100.0, step=0.5, disabled=no_cap,
+                                  value=float(current if current is not None else p.default),
+                                  key=f"limit_pct_{p.key}_{v}")
+        ts.limits[p.key] = None if no_cap else percent
 
     st.subheader("Notice contacts")
     c1, c2 = st.columns(2)

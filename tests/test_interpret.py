@@ -12,6 +12,7 @@ from core.clause_data import build_library
 from ai.interpret import (candidate_question, clause_digest, context_summary, interpret_request,
                           resolve_included, result_lines, term_sheet_warnings, validate)
 from ai.llm import CountingClient, call_summary
+from core.clause_params import limits_of
 from core.draft_state import library_for
 from core.renumber import renumber_and_render
 from core.term_sheet_fields import Installment, TermSheet
@@ -217,10 +218,20 @@ def test_schema_allows_none_candidate():
 
 def test_prompt_includes_full_clause_text():
     client = FakeClient(empty())
-    interpret_request(sample_term_sheet(), build_library(), client)
+    interpret_request(sample_term_sheet(), library_for({}), client)
     user = client.last_kwargs["messages"][1]["content"]
     assert "not more than 5 (five) percent of the Contract Price" in user
     assert "Payable upon completion of installation of the inverter" in user
+
+
+def test_prompt_follows_the_chosen_caps():
+    client = FakeClient(empty())
+    ts = sample_term_sheet()
+    ts.limits = {"ld_cap": None, "damages_cap": 8}
+    interpret_request(ts, library_for({}, limits_of(ts)), client)
+    user = client.last_kwargs["messages"][1]["content"]
+    assert "not more than" not in user and "shall not exceed 8% (eight percent)" in user
+    assert "limits: cap on delay damages none; cap on total damages deducted 8%" in user
 
 
 def test_schema_enforces_clause_keys():
