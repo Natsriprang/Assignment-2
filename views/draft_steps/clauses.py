@@ -135,14 +135,15 @@ def render_draft(entry_id, drafted, clauses):
     titles = {c.key: c.title for c in clauses.values() if c.included}
     options = list(titles) + ["end"]
     pk = drafts.placement_key(entry_id)
-    if st.session_state.get(pk) not in options:        # also covers a clause that was unticked after the choice
+    if st.session_state.get(pk) not in options:        # the widget was dropped when the user left this step, or its clause was unticked
         wanted = drafts.placement_of(entry_id, drafted)
         st.session_state[pk] = wanted if wanted in options else drafts_default(options)
-    st.selectbox("Place this clause before", options, key=pk,
-                 format_func=lambda k: "At the end" if k == "end" else titles[k])
+    placement = st.selectbox("Place this clause before", options, key=pk,
+                             format_func=lambda k: "At the end" if k == "end" else titles[k])
     if drafted.placement_reason:
         st.caption(plain(f"Suggested by the AI: {drafted.placement_reason}"))
-    st.checkbox("Keep this draft for the next step", value=True, key=drafts.keep_key(entry_id))
+    kept = st.checkbox("Keep this draft for the next step", value=drafts.is_kept(entry_id), key=drafts.keep_key(entry_id))
+    drafts.remember(entry_id, kept, placement)
 
 
 def display_text(result, latest):
