@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from core.field_titles import BLANK_CHECKED, DASH, FIELD_TITLES, label_on_page, title
 from core.price_words import words_to_number
-from core.term_checks import blank_fields, contradictions, date_warnings, percent_warnings, price_warnings
+from core.term_checks import blank_fields, blank_groups, contradictions, date_warnings, percent_warnings, price_warnings, vat_finding
 from core.term_sheet_fields import Installment, TermSheet
 
 
@@ -126,6 +126,32 @@ def test_fields_with_their_own_notice_or_a_default_or_no_use_are_not_listed():
         assert title(field) not in listed, field
     assert "Contractor \u2013 Country of registration" not in listed        # starts as Thailand
     assert len(listed) == len(BLANK_CHECKED) - 1 + 1                        # every checked field but the Contractor's country, plus the installments
+
+
+# ---------------------------------------------------------------- one list: the required ones first, nothing named twice
+def test_the_required_blanks_and_the_others_are_one_list_without_repeats():
+    required, other = blank_groups(TermSheet())
+    assert required == ["Project name", "Project location", "Capacity", "Owner \u2013 Company name", "Contractor \u2013 Company name",
+                        "Contract price \u2013 Price (THB, number)", "The Works start and finish by"]
+    assert not set(required) & set(other), "a field is named once"
+    assert "Contract no." in other and "Owner \u2013 Authorised signatory" in other and "Payment installments" in other
+    assert sorted(required + other) == sorted(set(required + other))
+    assert blank_groups(None) == ([], []) and blank_groups(complete()) == ([], [])
+
+
+def test_the_required_group_follows_the_deadline_mode():
+    assert blank_groups(complete(deadline_mode="calendar", start_date="", completion_date=""))[0] == ["Start date", "Completion date"]
+    assert blank_groups(complete(deadline_mode="period", completion_days=""))[0] == ["Complete within (days after signing)"]
+    assert blank_groups(complete(deadline_mode=""))[0] == ["The Works start and finish by"]
+    required, other = blank_groups(complete(project_name="", owner_signatory=""))
+    assert required == ["Project name"] and other == ["Owner \u2013 Authorised signatory"]
+
+
+def test_an_open_vat_is_one_line_in_the_check():
+    assert vat_finding(complete()) is None and vat_finding(complete(vat_treatment="Inclusive of VAT")) is None
+    assert vat_finding(complete(vat_treatment="")) == "VAT: not chosen. See the red notice at the VAT field."
+    assert vat_finding(complete(vat_treatment="VAT 7%")) == "VAT: not chosen (the term sheet says \u201cVAT 7%\u201d). See the red notice at the VAT field."
+    assert vat_finding(None) is not None
 
 
 # ---------------------------------------------------------------- the page's names

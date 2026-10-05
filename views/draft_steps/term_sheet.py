@@ -8,7 +8,6 @@ import streamlit as st
 from core.capacity import UNITS, parse_capacity
 from core.clause_params import PARAMS
 from core.deadline import deadline_choice, deadline_warning, is_days
-from core.field_titles import title
 from core.term_sheet_fields import TermSheet, Installment, ensure_fields, missing_required, signing_place
 from core.vat import vat_choice, vat_warning
 from core.xlsx_parser import FIELD_LABELS, parse_xlsx_report
@@ -212,7 +211,7 @@ def render():
     term_check.show_result(ts)
     missing = missing_required(ts)
     if missing:
-        st.warning(f"Required before continuing: {', '.join(title(f) for f in missing)}")
+        st.warning("Fill in the required fields to continue. The check lists which ones are missing.")
     if st.button("Recheck" if term_check.has_result() else "Check term sheet", key="term_check_button"):
         term_check.run_check(ts)
         st.rerun()

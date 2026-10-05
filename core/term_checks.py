@@ -7,7 +7,8 @@ from core.deadline import deadline_choice
 from core.field_titles import BLANK_CHECKED, DASH, title
 from core.fill import format_price, parse_decimal, date_of
 from core.price_words import words_to_number
-from core.term_sheet_fields import signing_place
+from core.term_sheet_fields import missing_required, signing_place
+from core.vat import vat_choice
 
 
 def blank_fields(ts):
@@ -29,6 +30,26 @@ def blank_fields(ts):
         if not (inst.percent or "").strip():
             blanks.append(f"Installment {(inst.number or '').strip() or i}: %")
     return blanks
+
+
+def blank_groups(ts):
+    """(required, other): the titles still empty that the term sheet needs before Continue (the gate), and the rest. One list for
+    the user, so a field is never named twice. The required ones include the deadline's mode and dates, which the blanks list
+    of fields does not cover."""
+    if ts is None:
+        return [], []
+    required = [title(f) for f in missing_required(ts)]
+    return required, [b for b in blank_fields(ts) if b not in required]
+
+
+def vat_finding(ts):
+    """One line for the check when VAT is not chosen. The explanation is the red notice at the VAT field; this only keeps a
+    check from looking clean while VAT is open."""
+    if vat_choice(ts):
+        return None
+    raw = " ".join((getattr(ts, "vat_treatment", "") or "").split())
+    said = f" (the term sheet says \u201c{raw}\u201d)" if raw else ""
+    return f"{title('vat_treatment')}: not chosen{said}. See the red notice at the VAT field."
 
 
 def percent_warnings(ts):
