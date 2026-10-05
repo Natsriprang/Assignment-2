@@ -32,5 +32,4 @@ def vat_warning(term_sheet):
         return None
     raw = " ".join((getattr(term_sheet, "vat_treatment", "") or "").split())
     said = f" The term sheet says \u201c{raw}\u201d, which cannot be read as inclusive or exclusive." if raw else ""
-    return (f"VAT is not chosen.{said} Until you choose, the price clause keeps the words \u201c{CLAUSE_PHRASE}\u201d, "
-            "so the contract does not say whether the price includes VAT.")
+    return ("VAT is not chosen.")
