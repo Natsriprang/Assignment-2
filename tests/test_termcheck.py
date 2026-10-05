@@ -71,10 +71,12 @@ def test_nothing_wrong_is_an_empty_list():
 
 
 def test_the_prompt_and_schema():
-    assert "deadline_mode" in CHECK_PROMPT and "ignore the other pair" in CHECK_PROMPT and "start_days" in CHECK_PROMPT
+    assert "deadline_mode" in CHECK_PROMPT and "completion_days only" in CHECK_PROMPT and "start_days" not in CHECK_PROMPT
+    assert "capacity unit against the project name" not in CHECK_PROMPT and "plausible for the kind of project" in CHECK_PROMPT
     assert "periods and not calendar dates" not in CHECK_PROMPT and "Do not report missing optional fields" in CHECK_PROMPT
     enum = check_schema()["properties"]["issues"]["items"]["properties"]["field"]["enum"]
     assert enum == FIELDS and "limits" not in FIELDS and "installments" in FIELDS and "payment_days" in FIELDS
+    assert "start_days" not in FIELDS and "owner_contact_email" in FIELDS and "contractor_contact_email" in FIELDS
     client = Client({"issues": []})
     check_term_sheet(TS, client)
     sent = client.requests[0]["messages"]

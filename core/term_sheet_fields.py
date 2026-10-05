@@ -46,18 +46,19 @@ class TermSheet:
     deadline_mode: str = ""            # "calendar" | "period" | "" -- which pair below the contract uses
     start_date: str = ""               # calendar dates ...
     completion_date: str = ""
-    start_days: str = ""               # ... or days after signing
-    completion_days: str = ""
+    completion_days: str = ""          # ... or days after signing (the Works are then only given a completion)
 
     owner_contact_name: str = ""
     owner_contact_position: str = ""
     owner_contact_location: str = ""
     owner_contact_phone: str = ""
+    owner_contact_email: str = ""
 
     contractor_contact_name: str = ""
     contractor_contact_position: str = ""
     contractor_contact_location: str = ""
     contractor_contact_phone: str = ""
+    contractor_contact_email: str = ""
 
     limits: dict = field(default_factory=dict)   # parameter key -> percent, or None for "no cap"
 
@@ -70,7 +71,7 @@ REQUIRED_FIELDS = [
 
 NEW_FIELD_DEFAULTS = {"owner_country": "", "contractor_country": "Thailand", "signing_place_choice": "",
                       "signing_place_other": "", "payment_days": "30", "attachment_no": "",
-                      "deadline_mode": "", "start_days": "", "completion_days": ""}
+                      "deadline_mode": "", "completion_days": "", "owner_contact_email": "", "contractor_contact_email": ""}
 
 
 def ensure_fields(term_sheet):
@@ -99,4 +100,4 @@ def missing_required(term_sheet):
         return missing + ["deadline_mode"]
     if mode == "calendar":
         return missing + [f for f in ("start_date", "completion_date") if not (getattr(term_sheet, f, "") or "").strip()]
-    return missing + [f for f in ("start_days", "completion_days") if not is_days(getattr(term_sheet, f, ""))]
+    return missing + ([] if is_days(getattr(term_sheet, "completion_days", "")) else ["completion_days"])

@@ -10,7 +10,7 @@ from core.blanks import find_blanks
 from core.clause_data import build_library
 from core.clause_params import int_words
 from core.draft_state import library_for
-from core.fill import deadline_phrases, fill_deadline, fill_slots, fill_template, fill_warnings, format_date, looks_like_date, parse_decimal
+from core.fill import DEADLINE_BODY, DEADLINE_TAIL, deadline_sentence, fill_deadline, fill_slots, fill_template, fill_warnings, format_date, looks_like_date, parse_decimal
 from core.header import build_header
 from core.renumber import renumber_and_render
 from core.term_sheet_fields import Installment, TermSheet, ensure_fields, signing_place
@@ -21,7 +21,7 @@ def full(**over):
                    owner_name="Solar Owner Co., Ltd.", owner_country="Singapore", owner_reg_no="O-1", owner_address="1 Owner Road, Bangkok",
                    contractor_name="Sun Build Co., Ltd.", contractor_reg_no="C-2", contractor_address="2 Builder Road, Bangkok",
                    contract_price_number="10000000", contract_price_words="ten million baht", vat_treatment="exclusive",
-                   attachment_no="3", deadline_mode="period", start_days="14", completion_days="120",
+                   attachment_no="3", deadline_mode="period", completion_days="120",
                    signing_place_choice="owner")
     ts.installments = [Installment(str(i + 1), p) for i, p in enumerate(["10", "30", "30", "20", "10"])]
     for k, v in over.items():
@@ -137,35 +137,45 @@ def test_the_percentages_and_amounts_check_covers_every_installment():
     assert not any("round" in w for w in fill_warnings(ts))
 
 
-def test_the_deadline_follows_the_mode_that_was_chosen():
-    first = lambda **o: lines(library_for({}, None, None, full(**o)), "completion_deadline")[0]
-    period = first()
-    assert ("commence the Works under this Agreement within 14 days from the signing date of this Agreement and the Contractor agrees "
-            "to complete the Works within 120 days from the signing date of this Agreement or within 150 days from the signing date") in period
+def test_the_deadline_sentence_constants_are_the_templates():
+    template = next(c for c in build_library() if c.key == "completion_deadline").items[0].text
+    assert template == DEADLINE_BODY + DEADLINE_TAIL                     # if the template is edited, this fails instead of the fill going quiet
+
+
+def test_the_deadline_is_one_way_or_the_other_never_both():
+    first = lambda **o: lines(library_for({}, None, None, full(**o)), "completion_deadline")[0].split(" ", 1)[1]       # without "6.1 "
     dates = first(deadline_mode="calendar", start_date="03 October 2026", completion_date="10 October 2026")
-    assert ("commence the Works under this Agreement on or before 3 October 2026 and the Contractor agrees to complete the Works "
-            "on or before 10 October 2026 or within 150 days from the signing date") in dates
-    assert "on or before 3 October 2026" in first(deadline_mode="calendar", start_date="2026-10-03 00:00:00", completion_date="x")
+    assert dates == ("The Owner agrees that the Contractor shall commence the Works under this Agreement on or before 3 October 2026 "
+                     "and the Contractor agrees to complete the Works on or before 10 October 2026.")
+    assert first() == "The Contractor agrees to complete the Works under this Agreement within 120 days from the signing date of this Agreement."
+    for text in (dates, first()):
+        assert "or within" not in text and "150" not in text            # no fallback alternative, in either mode
+
+
+def test_a_period_has_only_a_completion():
+    first = lambda **o: lines(library_for({}, None, None, full(**o)), "completion_deadline")[0]
+    assert "commence" not in first() and "commence" not in first(start_date="1 Nov 2026", completion_date="1 Dec 2026")
+    assert "on or before 3 October 2026 and" in first(deadline_mode="calendar", start_date="2026-10-03 00:00:00", completion_date="x")
     assert "on or before 03/10/2026" in first(deadline_mode="calendar", start_date="03/10/2026", completion_date="x")      # kept as typed
     assert "on or before 3 ตุลาคม 2569" in first(deadline_mode="calendar", start_date="3 ตุลาคม 2569", completion_date="x")  # so is any other form
 
 
-def test_only_the_pair_the_mode_names_is_used():
+def test_only_what_the_mode_names_is_used():
     first = lambda **o: lines(library_for({}, None, None, full(**o)), "completion_deadline")[0]
     stale = dict(start_date="1 Nov 2026", completion_date="1 Dec 2026")                          # typed earlier, then the mode was switched
-    assert "within 14 days from the signing date of this Agreement and" in first(**stale) and "1 Nov 2026" not in first(**stale)
-    stale = dict(start_days="30", completion_days="60")
-    assert "on or before 1 November 2026" in first(deadline_mode="calendar", start_date="1 Nov 2026", completion_date="1 Dec 2026", **stale)
-    assert "30 days" not in first(deadline_mode="calendar", start_date="1 Nov 2026", completion_date="1 Dec 2026", **stale)
+    assert "within 120 days" in first(**stale) and "1 Nov 2026" not in first(**stale) and "1 Dec 2026" not in first(**stale)
+    cal = dict(deadline_mode="calendar", start_date="1 Nov 2026", completion_date="1 Dec 2026", completion_days="30")
+    assert "on or before 1 December 2026." in first(**cal) and "30 days" not in first(**cal)
 
 
 def test_without_a_mode_or_a_value_the_blank_stays():
-    first = lambda **o: lines(library_for({}, None, None, full(**o)), "completion_deadline")[0]
-    assert "within [*] and the Contractor agrees to complete the Works within [*] or within 150" in first(deadline_mode="")
-    assert "within [*] and" in first(start_days="") and "within 120 days from the signing" in first(start_days="")
-    for bad in ("abc", "0", "1000", "-5", "2.5", "14 days"):
-        assert "within [*] and" in first(start_days=bad), bad
-    assert deadline_phrases(full(deadline_mode="nonsense")) == [None, None]
+    first = lambda **o: lines(library_for({}, None, None, full(**o)), "completion_deadline")[0].split(" ", 1)[1]
+    assert first(deadline_mode="") == DEADLINE_BODY + DEADLINE_TAIL                    # nothing chosen: the template as it is
+    for bad in ("abc", "0", "1000", "-5", "2.5", "", "120 days"):
+        assert first(completion_days=bad) == "The Contractor agrees to complete the Works under this Agreement within [*] days from the signing date of this Agreement.", bad
+    assert "on or before [*] and" in first(deadline_mode="calendar", start_date="", completion_date="1 Dec 2026")
+    assert deadline_sentence("some other sentence", full()) == "some other sentence"                         # an edited template is left alone
+    assert deadline_sentence(DEADLINE_BODY + DEADLINE_TAIL, full(deadline_mode="nonsense")) == DEADLINE_BODY + DEADLINE_TAIL
 
 
 def test_a_sentence_with_a_different_number_of_blanks_is_left_alone():

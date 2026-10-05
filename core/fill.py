@@ -82,16 +82,27 @@ def fill_deadline(text, phrases):
     return out
 
 
-def deadline_phrases(ts):
-    """What the term sheet says about the start and the completion, as the clause words it. Nothing until a mode is chosen."""
+# The template sentence, in two parts: what the Works must do, and its fallback "or within 150 days". Once the term sheet
+# says how the deadline is set, the sentence says that and only that.
+DEADLINE_BODY = ("The Owner agrees that the Contractor shall commence the Works under this Agreement within [*] and the "
+                 "Contractor agrees to complete the Works within [*]")
+DEADLINE_TAIL = " or within 150 days from the signing date of this Agreement."
+
+
+def deadline_sentence(text, ts):
+    """The deadline sentence for the mode the term sheet chose. Until a mode is chosen, or if the template sentence was
+    edited, the text is left as it is.
+    calendar: both dates, "on or before ...", no fallback.  period: only the completion, counted from signing."""
     from core.deadline import deadline_choice, is_days
     mode = deadline_choice(ts)
+    if not mode or text != DEADLINE_BODY + DEADLINE_TAIL:
+        return text
     if mode == "calendar":
-        return [f"on or before {format_date(v)}" if v else None for v in (_text(ts, "start_date"), _text(ts, "completion_date"))]
-    if mode == "period":
-        return [f"within {int(v)} days from the signing date of this Agreement" if is_days(v) else None
-                for v in (_text(ts, "start_days"), _text(ts, "completion_days"))]
-    return [None, None]
+        phrases = [f"on or before {format_date(v) if v else BLANK}" for v in (_text(ts, "start_date"), _text(ts, "completion_date"))]
+        return fill_deadline(DEADLINE_BODY, phrases) + "."
+    days = _text(ts, "completion_days")
+    shown = str(int(days)) if is_days(days) else BLANK
+    return f"The Contractor agrees to complete the Works under this Agreement within {shown} days from the signing date of this Agreement."
 
 
 def fill_slots(text, values):
@@ -177,7 +188,7 @@ def fill_template(library, term_sheet):
 
     deadline = _item(by_key.get("completion_deadline"), 0)
     if deadline:
-        deadline.text = fill_deadline(deadline.text, deadline_phrases(ts))
+        deadline.text = deadline_sentence(deadline.text, ts)
     return library
 
 

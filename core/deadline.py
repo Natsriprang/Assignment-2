@@ -30,15 +30,15 @@ def deadline_choice(term_sheet):
 
 
 def apply_import(ts):
-    """Sets the mode (and the days) from what a term sheet said, when it can be read; otherwise leaves the mode unchosen."""
+    """Sets the mode (and the days) from what a term sheet said, when it can be read; otherwise leaves the mode unchosen.
+    Two dates are calendar dates. A completion given in days is a period (the start, if the cell has one, is not used then:
+    a period only has a completion). Anything else stays unchosen."""
     start, completion = (ts.start_date or "").strip(), (ts.completion_date or "").strip()
-    ts.deadline_mode, ts.start_days, ts.completion_days = "", "", ""
-    if not (start and completion):
-        return ts
-    if looks_like_date(start) and looks_like_date(completion):
+    ts.deadline_mode, ts.completion_days = "", ""
+    if start and completion and looks_like_date(start) and looks_like_date(completion):
         ts.deadline_mode = "calendar"
-    elif period_days(start) and period_days(completion):
-        ts.deadline_mode, ts.start_days, ts.completion_days = "period", str(period_days(start)), str(period_days(completion))
+    elif period_days(completion) and (not start or period_days(start)):
+        ts.deadline_mode, ts.completion_days = "period", str(period_days(completion))
     return ts
 
 

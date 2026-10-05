@@ -16,7 +16,7 @@ from views.draft_steps import flow, term_check
 PLACE_LABELS = {"": "\u2014 not chosen \u2014", "owner": "Owner's registered address",
                "contractor": "Contractor's registered address", "other": "Other place"}
 IMPORTED_FIELDS = set(FIELD_CELLS) | {"capacity_unit"}
-DEADLINE_FIELDS = ("deadline_mode", "start_days", "completion_days")       # read together from the start/completion cells
+DEADLINE_FIELDS = ("deadline_mode", "completion_days")       # read together from the start/completion cells
 DEADLINE_LABELS = {"": "\u2014 not chosen \u2014", "calendar": "Calendar dates", "period": "A period from signing"}
 VAT_LABELS = {"": "\u2014 not chosen \u2014", "inclusive": "Inclusive of VAT", "exclusive": "Exclusive of VAT"}
 
@@ -140,11 +140,9 @@ def render():
         ts.start_date = c1.text_input("Start date", ts.start_date)
         ts.completion_date = c2.text_input("Completion date", ts.completion_date)
     elif ts.deadline_mode == "period":
-        ts.start_days = c1.text_input("Start within (days after signing)", ts.start_days, key=f"start_days_{v}")
-        ts.completion_days = c2.text_input("Complete within (days after signing)", ts.completion_days, key=f"completion_days_{v}")
-        for label, value in (("Start", ts.start_days), ("Completion", ts.completion_days)):
-            if value.strip() and not is_days(value):
-                st.error(f"{label}: enter a whole number of days from 1 to 999.")
+        ts.completion_days = c1.text_input("Complete within (days after signing)", ts.completion_days, key=f"completion_days_{v}")
+        if ts.completion_days.strip() and not is_days(ts.completion_days):
+            st.error("Completion: enter a whole number of days from 1 to 999.")
     if deadline_warning(ts):
         st.error("\u2757 " + deadline_warning(ts))
 
@@ -173,13 +171,15 @@ def render():
         ts.owner_contact_name = st.text_input("Name", ts.owner_contact_name, key=f"own_cn_{v}")
         ts.owner_contact_position = st.text_input("Position", ts.owner_contact_position, key=f"own_cp_{v}")
         ts.owner_contact_location = st.text_input("Location", ts.owner_contact_location, key=f"own_cl_{v}")
-        ts.owner_contact_phone = st.text_input("Phone / email", ts.owner_contact_phone, key=f"own_cph_{v}")
+        ts.owner_contact_phone = st.text_input("Phone", ts.owner_contact_phone, key=f"own_cph_{v}")
+        ts.owner_contact_email = st.text_input("Email", ts.owner_contact_email, key=f"own_cem_{v}")
     with c2:
         st.markdown("**Contractor**")
         ts.contractor_contact_name = st.text_input("Name", ts.contractor_contact_name, key=f"con_cn_{v}")
         ts.contractor_contact_position = st.text_input("Position", ts.contractor_contact_position, key=f"con_cp_{v}")
         ts.contractor_contact_location = st.text_input("Location", ts.contractor_contact_location, key=f"con_cl_{v}")
-        ts.contractor_contact_phone = st.text_input("Phone / email", ts.contractor_contact_phone, key=f"con_cph_{v}")
+        ts.contractor_contact_phone = st.text_input("Phone", ts.contractor_contact_phone, key=f"con_cph_{v}")
+        ts.contractor_contact_email = st.text_input("Email", ts.contractor_contact_email, key=f"con_cem_{v}")
 
     st.divider()
     missing = missing_required(ts)

@@ -40,11 +40,31 @@ FIELD_CELLS = {
     "owner_contact_position": "C71",
     "owner_contact_location": "C72",
     "owner_contact_phone": "C73",
-    "contractor_contact_name": "C74",
-    "contractor_contact_position": "C75",
-    "contractor_contact_location": "C76",
+    "owner_contact_email": "C74",          # a row of its own under each phone row
+    "contractor_contact_name": "C75",
+    "contractor_contact_position": "C76",
+    "contractor_contact_location": "C77",
+    "contractor_contact_phone": "C78",
+    "contractor_contact_email": "C79",
+}
+
+# The layout before the email rows were added: phone and email shared one cell, and the Contractor's block started at row 74.
+LEGACY_CONTACT_CELLS = {
+    "owner_contact_name": "C70", "owner_contact_position": "C71", "owner_contact_location": "C72", "owner_contact_phone": "C73",
+    "contractor_contact_name": "C74", "contractor_contact_position": "C75", "contractor_contact_location": "C76",
     "contractor_contact_phone": "C77",
 }
+EMAIL_LABEL = re.compile(r"e-?\s?mail|\u0e2d\u0e35\u0e40\u0e21\u0e25", re.IGNORECASE)
+
+
+def field_cells(ws):
+    """The cells to read. A sheet whose label column names an email row where one is expected has the email rows; any other
+    sheet is read in the layout it had before them (and its phone cell is the phone, with no email)."""
+    if any(EMAIL_LABEL.search(str(ws[c].value or "")) for c in ("B74", "B79")):
+        return dict(FIELD_CELLS)
+    cells = {k: v for k, v in FIELD_CELLS.items() if not k.endswith("_contact_email")}
+    cells.update(LEGACY_CONTACT_CELLS)
+    return cells
 
 
 def _clean(value):
@@ -60,7 +80,7 @@ def parse_xlsx(file) -> TermSheet:
     ws = wb[wb.sheetnames[0]]
 
     ts = TermSheet()
-    for field_name, cell in FIELD_CELLS.items():
+    for field_name, cell in field_cells(ws).items():
         value = _clean(ws[cell].value)
         if value:
             setattr(ts, field_name, value)

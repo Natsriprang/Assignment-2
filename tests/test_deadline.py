@@ -38,13 +38,14 @@ def test_the_import_reads_dates_and_periods_and_leaves_the_rest_unchosen():
     def read(start, completion):
         return apply_import(TermSheet(start_date=start, completion_date=completion))
     d = read("03 October 2026", "10 October 2026")
-    assert (d.deadline_mode, d.start_days, d.completion_days) == ("calendar", "", "")
+    assert (d.deadline_mode, d.completion_days) == ("calendar", "")
     p = read("14 days after signing", "150 days from the signing date")
-    assert (p.deadline_mode, p.start_days, p.completion_days) == ("period", "14", "150")
+    assert (p.deadline_mode, p.completion_days) == ("period", "150")                              # a period only has a completion
+    assert read("", "120 days").deadline_mode == "period" and read("", "120 days").completion_days == "120"
     for start, completion in [("03 October 2026", "150 days"), ("14 days", "10 October 2026"), ("14 days", "150 days from commencement"),
-                              ("soon", "later"), ("", "10 October 2026"), ("", "")]:
+                              ("soon", "later"), ("", "10 October 2026"), ("", ""), ("03 October 2026", ""), ("soon", "120 days")]:
         u = read(start, completion)
-        assert (u.deadline_mode, u.start_days, u.completion_days) == ("", "", ""), (start, completion)
+        assert (u.deadline_mode, u.completion_days) == ("", ""), (start, completion)
         assert (u.start_date, u.completion_date) == (start, completion)                          # what the cells said is kept
 
 
@@ -72,11 +73,11 @@ def test_what_is_required_depends_on_the_mode():
     assert missing_required(TermSheet(**BASE)) == ["deadline_mode"]
     assert missing_required(TermSheet(**BASE, deadline_mode="calendar")) == ["start_date", "completion_date"]
     assert missing_required(TermSheet(**BASE, deadline_mode="calendar", start_date="1 Nov 2026", completion_date=" ")) == ["completion_date"]
-    assert missing_required(TermSheet(**BASE, deadline_mode="period")) == ["start_days", "completion_days"]
-    assert missing_required(TermSheet(**BASE, deadline_mode="period", start_days="14", completion_days="abc")) == ["completion_days"]
-    assert missing_required(TermSheet(**BASE, deadline_mode="period", start_days="14", completion_days="120")) == []
-    assert missing_required(TermSheet(**BASE, deadline_mode="calendar", start_date="a", completion_date="b", start_days="", completion_days="")) == []
-    assert "project_name" in missing_required(TermSheet(deadline_mode="period", start_days="1", completion_days="2"))
+    assert missing_required(TermSheet(**BASE, deadline_mode="period")) == ["completion_days"]
+    assert missing_required(TermSheet(**BASE, deadline_mode="period", completion_days="abc")) == ["completion_days"]
+    assert missing_required(TermSheet(**BASE, deadline_mode="period", completion_days="120")) == []
+    assert missing_required(TermSheet(**BASE, deadline_mode="calendar", start_date="a", completion_date="b", completion_days="")) == []
+    assert "project_name" in missing_required(TermSheet(deadline_mode="period", completion_days="2"))
     assert "deadline_mode" in missing_required(None)
 
 

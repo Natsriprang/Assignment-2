@@ -19,15 +19,17 @@ inside it.
 
 Report only problems that would put a wrong or unclear fact into the contract:
 - values that contradict each other (the price in digits against the price in words, installment percentages that do \
-not add up, the capacity unit against the project name);
+not add up);
 - the start and completion of the Works are set either by calendar dates (start_date, completion_date) or by a number \
-of days after signing (start_days, completion_days), as deadline_mode says. Only the pair that deadline_mode names is \
-used; ignore the other pair and do not report the choice. Report that pair only if it contradicts itself (a completion \
-date before the start date, completion days fewer than start days);
+of days after signing (completion_days only; there is no start), as deadline_mode says. Only what deadline_mode names is \
+used; ignore the other fields and do not report the choice. Report calendar dates only if the completion is before the \
+start;
 - entries that look misplaced (a company name in the registration number field, a person's name in an address \
 field, a country in the place field).
 
-Do not report missing optional fields, style, or anything you are unsure of. If nothing is wrong, return an empty \
+Do not report missing optional fields, style, or anything you are unsure of. Never judge whether a value is \
+plausible for the kind of project (a capacity, a price, a place or a unit is the user's to decide); report only that \
+fields contradict each other or are misplaced. If nothing is wrong, return an empty \
 list. For each problem: "field" is the term sheet field name, "evidence" is copied exactly from the term sheet text \
 (the value that shows the problem), and "problem" is one short sentence."""
 
