@@ -1,10 +1,13 @@
-"""Parses a term sheet .xlsx matching term_sheet_template_EN.xlsx's layout: column B is the field
-label, column C is the value (left blank until filled in -- so any non-empty C cell is real data,
-no placeholder matching needed), column D is notes. Installment rows are found by scanning column
-B for the pattern 'Installment N', so a term sheet with 5 rows, 7 rows, or any other count parses
-correctly -- the row count is never assumed to be fixed."""
+"""Parses a term sheet .xlsx like term_sheet_template_EN.xlsx: column B is the field label, column C the value (left blank
+until filled in, so any non-empty C cell is real data), column D notes.
+
+Values are found by their LABEL in column B, never by row number, so rows may be inserted, deleted or reordered. A label
+that cannot be found is reported, not guessed; a label that appears more than once is reported when its copies differ.
+Installment rows are found by the pattern 'Installment N' in column B, so any number of them reads correctly. A value may
+run over several lines inside its cell; the lines are kept."""
 import datetime
 import re
+from dataclasses import dataclass, field
 
 import openpyxl
 
@@ -15,56 +18,53 @@ from core.term_sheet_fields import Installment, TermSheet
 INSTALLMENT_PATTERN = re.compile(r"installment\s*(\d+)", re.IGNORECASE)
 PERCENT_PATTERN = re.compile(r"(\d+(?:\.\d+)?)\s*%")
 
-# Cell positions matching term_sheet_template_EN.xlsx's layout (column B = label, column C = value).
-FIELD_CELLS = {
-    "project_name": "C3",
-    "project_location": "C4",
-    "capacity": "C6",
-    "contract_no": "C7",
-    "contract_date": "C8",
-    "owner_name": "C9",
-    "owner_reg_no": "C10",
-    "owner_signatory": "C11",
-    "owner_address": "C13",
-    "contractor_name": "C14",
-    "contractor_reg_no": "C15",
-    "contractor_signatory": "C16",
-    "contractor_address": "C18",
-    "roof_owner": "C25",
-    "contract_price_number": "C35",
-    "contract_price_words": "C36",
-    "vat_treatment": "C37",
-    "start_date": "C60",
-    "completion_date": "C61",
-    "owner_contact_name": "C70",
-    "owner_contact_position": "C71",
-    "owner_contact_location": "C72",
-    "owner_contact_phone": "C73",
-    "owner_contact_email": "C74",          # a row of its own under each phone row
-    "contractor_contact_name": "C75",
-    "contractor_contact_position": "C76",
-    "contractor_contact_location": "C77",
-    "contractor_contact_phone": "C78",
-    "contractor_contact_email": "C79",
+# term sheet field -> the label written in column B of the template
+FIELD_LABELS = {
+    "project_name": "Project name",
+    "project_location": "Project location",
+    "capacity": "Capacity (kWp or MW)",
+    "contract_no": "Contract no.",
+    "contract_date": "Contract date",
+    "owner_name": "Owner",
+    "owner_reg_no": "Owner registration no.",
+    "owner_signatory": "Owner authorised signatory(ies)",
+    "owner_address": "Owner registered office",
+    "contractor_name": "Contractor",
+    "contractor_reg_no": "Contractor registration no.",
+    "contractor_signatory": "Contractor authorised signatory(ies)",
+    "contractor_address": "Contractor registered office",
+    "roof_owner": "Roof / site owner",
+    "contract_price_number": "Contract Price (number)",
+    "contract_price_words": "Contract Price (in words)",
+    "vat_treatment": "VAT treatment",
+    "start_date": "Start date",
+    "completion_date": "Completion date",
+    "owner_contact_name": "Owner contact name",
+    "owner_contact_position": "Owner contact position",
+    "owner_contact_location": "Owner contact location",
+    "owner_contact_phone": "Owner contact phone",
+    "owner_contact_email": "Owner contact email",
+    "contractor_contact_name": "Contractor contact name",
+    "contractor_contact_position": "Contractor contact position",
+    "contractor_contact_location": "Contractor contact location",
+    "contractor_contact_phone": "Contractor contact phone",
+    "contractor_contact_email": "Contractor contact email",
 }
 
-# The layout before the email rows were added: phone and email shared one cell, and the Contractor's block started at row 74.
-LEGACY_CONTACT_CELLS = {
-    "owner_contact_name": "C70", "owner_contact_position": "C71", "owner_contact_location": "C72", "owner_contact_phone": "C73",
-    "contractor_contact_name": "C74", "contractor_contact_position": "C75", "contractor_contact_location": "C76",
-    "contractor_contact_phone": "C77",
-}
-EMAIL_LABEL = re.compile(r"e-?\s?mail|\u0e2d\u0e35\u0e40\u0e21\u0e25", re.IGNORECASE)
+
+@dataclass
+class ImportReport:
+    missing: list = field(default_factory=list)      # labels not found in column B
+    conflicts: list = field(default_factory=list)    # sentences about repeated labels whose copies differ
+
+    @property
+    def nothing_found(self):
+        return len(self.missing) == len(FIELD_LABELS)
 
 
-def field_cells(ws):
-    """The cells to read. A sheet whose label column names an email row where one is expected has the email rows; any other
-    sheet is read in the layout it had before them (and its phone cell is the phone, with no email)."""
-    if any(EMAIL_LABEL.search(str(ws[c].value or "")) for c in ("B74", "B79")):
-        return dict(FIELD_CELLS)
-    cells = {k: v for k, v in FIELD_CELLS.items() if not k.endswith("_contact_email")}
-    cells.update(LEGACY_CONTACT_CELLS)
-    return cells
+def _label_key(text):
+    """A label compared without case, extra spaces or a trailing colon."""
+    return " ".join(str(text).replace("\xa0", " ").split()).rstrip(":").strip().lower()
 
 
 def _clean(value):
@@ -72,18 +72,42 @@ def _clean(value):
         return ""
     if isinstance(value, (datetime.date, datetime.datetime)):
         return value.strftime("%d %B %Y")
-    return str(value).strip()
+    text = str(value).replace("\r\n", "\n").replace("\r", "\n")
+    return "\n".join(line.strip() for line in text.strip().split("\n"))
 
 
-def parse_xlsx(file) -> TermSheet:
+def _same(a, b):
+    """Copies that differ only in case or spacing ("100MW", "100 mw") are the same value."""
+    return "".join(a.split()).lower() == "".join(b.split()).lower()
+
+
+def parse_xlsx_report(file):
+    """The term sheet read from the file, and a report of what could not be read."""
     wb = openpyxl.load_workbook(file, data_only=True)
     ws = wb[wb.sheetnames[0]]
 
-    ts = TermSheet()
-    for field_name, cell in field_cells(ws).items():
-        value = _clean(ws[cell].value)
-        if value:
-            setattr(ts, field_name, value)
+    rows_by_label = {}
+    for row in ws.iter_rows():
+        for cell in row:
+            # column 2 == "B". Checked by number, not `.column_letter`, because a merged cell (other than its top-left
+            # anchor) is a MergedCell object that lacks that attribute.
+            if cell.column == 2 and isinstance(cell.value, str) and cell.value.strip():
+                rows_by_label.setdefault(_label_key(cell.value), []).append(cell.row)
+
+    ts, report = TermSheet(), ImportReport()
+    for field_name, label in FIELD_LABELS.items():
+        rows = rows_by_label.get(_label_key(label))
+        if not rows:
+            report.missing.append(label)
+            continue
+        found = [(r, _clean(ws.cell(row=r, column=3).value)) for r in rows]
+        filled = [(r, v) for r, v in found if v]
+        if filled:
+            setattr(ts, field_name, filled[0][1])
+            if any(not _same(v, filled[0][1]) for _, v in filled[1:]):
+                report.conflicts.append(
+                    f"\u201c{label}\u201d appears {len(rows)} times (rows {', '.join(str(r) for r in rows)}) with different "
+                    f"values; the first filled one (row {filled[0][0]}) was used.")
 
     value, unit = parse_capacity(ts.capacity, ts.capacity_unit)
     if value is not None:
@@ -92,26 +116,26 @@ def parse_xlsx(file) -> TermSheet:
     installments = {}
     for row in ws.iter_rows():
         for cell in row:
-            # column 2 == "B". Checked by number, not `.column_letter`, because a merged cell
-            # (other than its top-left anchor) is a MergedCell object that lacks that attribute.
             if cell.column != 2 or not isinstance(cell.value, str):
                 continue
             m = INSTALLMENT_PATTERN.search(cell.value)
             if not m:
                 continue
             number = m.group(1)
-            # The % is written inside this same label cell, e.g. "Installment 1 (10%)", not in its
-            # own column -- so it has to be pulled out of cell.value itself, not a separate cell.
+            # The % is written inside this same label cell, e.g. "Installment 1 (10%)", not in its own column -- so it has
+            # to be pulled out of cell.value itself, not a separate cell.
             pct_match = PERCENT_PATTERN.search(cell.value)
-            condition_cell = ws.cell(row=cell.row, column=3)
-            docs_cell = ws.cell(row=cell.row, column=4)
             installments[number] = Installment(
                 number=number,
                 percent=pct_match.group(1) if pct_match else "",
-                condition=_clean(condition_cell.value),
-                required_docs=_clean(docs_cell.value),
+                condition=_clean(ws.cell(row=cell.row, column=3).value),
+                required_docs=_clean(ws.cell(row=cell.row, column=4).value),
             )
 
     ts.installments = [installments[k] for k in sorted(installments, key=int)]
     apply_import(ts)
-    return ts
+    return ts, report
+
+
+def parse_xlsx(file) -> TermSheet:
+    return parse_xlsx_report(file)[0]

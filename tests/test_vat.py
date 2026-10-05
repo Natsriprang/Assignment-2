@@ -15,6 +15,7 @@ from core.renumber import renumber_and_render
 from core.term_sheet_fields import TermSheet
 from core.vat import CLAUSE_PHRASE, normalise_vat, vat_choice, vat_warning
 from core.xlsx_parser import parse_xlsx
+from tests.xlsx_helper import workbook
 
 
 def price_sentence(library):
@@ -83,10 +84,7 @@ def test_the_notice_says_what_is_wrong_and_what_happens():
 
 def test_the_xlsx_import_keeps_what_the_cell_said_so_nothing_is_overwritten():
     def sheet(value):
-        wb = openpyxl.Workbook()
-        wb.active["C37"] = value
-        buf = io.BytesIO(); wb.save(buf); buf.seek(0)
-        return parse_xlsx(buf)
+        return parse_xlsx(workbook({"vat_treatment": value}))
     assert vat_choice(sheet("Exclusive of VAT")) == "exclusive" and sheet("Exclusive of VAT").vat_treatment == "Exclusive of VAT"
     assert vat_choice(sheet("inclusive")) == "inclusive"
     odd = sheet("VAT 7%")

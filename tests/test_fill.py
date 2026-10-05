@@ -111,6 +111,30 @@ def test_the_term_sheets_conditions_replace_the_templates_and_a_blank_keeps_them
     assert rows[3][3] == "Payable upon completion of installation of the inverter."
 
 
+def test_a_condition_with_several_lines_keeps_its_lines():
+    ts = full()
+    ts.installments[1].condition = "On completion and the Owner's acceptance of:\r\n(1) walkway   installation\n\n  (2) life line installation  "
+    ts.installments += [Installment("6", "5", condition="Final:\n(1) handover"), Installment("7", "5", condition="Done")]
+    price = clause(library_for({}, None, None, ts), "price_payment")
+    rows = price.tables[0]["rows"]
+    assert rows[1][3] == "On completion and the Owner's acceptance of:\n(1) walkway installation\n(2) life line installation"
+    assert rows[5][3] == "Final:\n(1) handover" and rows[6][3] == "Done"
+
+
+def test_the_lines_of_a_condition_reach_the_word_file_as_line_breaks():
+    import io
+    from docx import Document
+    from core.render import render_docx
+    ts = full()
+    ts.installments[1].condition = "Accept:\n(1) walkway\n(2) life line\n(3) mounting"
+    buf = io.BytesIO()
+    render_docx(library_for({}, None, None, ts), buf, header=build_header(ts)); buf.seek(0)
+    pay = [t for t in Document(buf).tables if t.rows[0].cells[0].text == "Installment"][0]
+    cell = pay.rows[2].cells[3]
+    assert cell._tc.xml.count("<w:br/>") == 3 and cell.text == "Accept:\n(1) walkway\n(2) life line\n(3) mounting"
+    assert pay.rows[1].cells[3]._tc.xml.count("<w:br/>") == 0                      # a one-line cell has none
+
+
 def test_every_installment_of_the_term_sheet_gets_a_row():
     ts = full(contract_price_number="1000000")
     ts.installments = [Installment(str(i + 1), p) for i, p in enumerate(["10", "20", "20", "15", "15", "10", "10"])]

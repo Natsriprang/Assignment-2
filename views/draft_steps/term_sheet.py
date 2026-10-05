@@ -9,13 +9,14 @@ from core.clause_params import PARAMS
 from core.deadline import deadline_choice, deadline_warning, is_days
 from core.term_sheet_fields import TermSheet, Installment, ensure_fields, missing_required, signing_place
 from core.vat import vat_choice, vat_warning
-from core.xlsx_parser import FIELD_CELLS, parse_xlsx
+from core.xlsx_parser import FIELD_LABELS, parse_xlsx_report
 from views.draft_steps import flow, term_check
 
 
 PLACE_LABELS = {"": "\u2014 not chosen \u2014", "owner": "Owner's registered address",
                "contractor": "Contractor's registered address", "other": "Other place"}
-IMPORTED_FIELDS = set(FIELD_CELLS) | {"capacity_unit"}
+IMPORTED_FIELDS = set(FIELD_LABELS) | {"capacity_unit"}
+IMPORT_REPORT_KEY = "term_sheet_import_report"
 DEADLINE_FIELDS = ("deadline_mode", "completion_days")       # read together from the start/completion cells
 DEADLINE_LABELS = {"": "\u2014 not chosen \u2014", "calendar": "Calendar dates", "period": "A period from signing"}
 VAT_LABELS = {"": "\u2014 not chosen \u2014", "inclusive": "Inclusive of VAT", "exclusive": "Exclusive of VAT"}
@@ -24,6 +25,22 @@ VAT_LABELS = {"": "\u2014 not chosen \u2014", "inclusive": "Inclusive of VAT", "
 def is_complete():
     ts = st.session_state.get("term_sheet")
     return ts is not None and not missing_required(ts)
+
+
+def show_import_report():
+    """What the last Excel import could not read, kept on the page until the next import."""
+    rep = st.session_state.get(IMPORT_REPORT_KEY)
+    if not rep:
+        return
+    if rep["nothing"]:
+        st.error(f"None of the expected labels were found in column B of the first sheet of {rep['name']}. "
+                 "Is it the term sheet template? Nothing was filled in.")
+        return
+    if rep["missing"]:
+        st.warning(f"Not found in {rep['name']} (the label is missing or was renamed), so these were left as they are: "
+                   + ", ".join(rep["missing"]) + ".")
+    for note in rep["conflicts"]:
+        st.warning(note)
 
 
 def render():
@@ -39,8 +56,11 @@ def render():
     # reusing whatever is already stored under the old key and ignoring the new `value=` argument.
 
     uploaded = st.file_uploader("Upload a filled term sheet (.xlsx)", type=["xlsx"])
+    show_import_report()
     if uploaded and st.button("Auto-fill the form"):
-        parsed = parse_xlsx(uploaded)
+        parsed, report = parse_xlsx_report(uploaded)
+        st.session_state[IMPORT_REPORT_KEY] = {"name": uploaded.name, "missing": report.missing, "conflicts": report.conflicts,
+                                               "nothing": report.nothing_found}
         for f in parsed.__dataclass_fields__:
             if f != "installments" and f not in IMPORTED_FIELDS or f in DEADLINE_FIELDS:
                 continue                       # fields the Excel does not hold keep what the user has
@@ -55,7 +75,8 @@ def render():
                 setattr(st.session_state.term_sheet, f, getattr(parsed, f))
 
         st.session_state.form_version += 1  # see the note on `v` above
-        st.success(f"Auto-filled from {uploaded.name}. Every field below is still editable.")
+        if not report.nothing_found:
+            st.success(f"Auto-filled from {uploaded.name}. Every field below is still editable.")
         st.rerun()
 
     st.caption("All fields are editable, whether auto-filled or entered by hand.")
@@ -121,8 +142,8 @@ def render():
         cols = st.columns([1, 1, 4, 3, 1])
         inst.number = cols[0].text_input("No.", inst.number, key=f"inst_no_{v}_{i}")
         inst.percent = cols[1].text_input("%", inst.percent, key=f"inst_pct_{v}_{i}")
-        inst.condition = cols[2].text_input("Condition", inst.condition, key=f"inst_cond_{v}_{i}")
-        inst.required_docs = cols[3].text_input("Required docs", inst.required_docs, key=f"inst_docs_{v}_{i}")
+        inst.condition = cols[2].text_area("Condition", inst.condition, key=f"inst_cond_{v}_{i}", height=110)
+        inst.required_docs = cols[3].text_area("Required docs", inst.required_docs, key=f"inst_docs_{v}_{i}", height=110)
         if cols[4].button("\u2715", key=f"inst_del_{v}_{i}"):
             ts.installments.pop(i)
             st.rerun()

@@ -17,6 +17,7 @@ from core.header import TITLE, build_header
 from core.render import render_docx
 from core.term_sheet_fields import TermSheet
 from core.xlsx_parser import parse_xlsx
+from tests.xlsx_helper import workbook
 
 
 def full_term_sheet(**overrides):
@@ -65,10 +66,7 @@ def test_an_older_term_sheet_object_without_the_unit_is_read_as_kwp():
 
 def test_xlsx_import_splits_the_unit_from_the_number():
     def sheet(value):
-        wb = openpyxl.Workbook()
-        wb.active["C6"] = value
-        buf = io.BytesIO(); wb.save(buf); buf.seek(0)
-        return parse_xlsx(buf)
+        return parse_xlsx(workbook({"capacity": value}))
     ts = sheet("0.5 MW"); assert (ts.capacity, ts.capacity_unit) == ("0.5", "MW")
     ts = sheet("1,250 kWp"); assert (ts.capacity, ts.capacity_unit) == ("1250", "kWp")
     ts = sheet(500); assert (ts.capacity, ts.capacity_unit) == ("500", "kWp")

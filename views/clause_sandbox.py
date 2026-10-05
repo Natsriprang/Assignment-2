@@ -4,6 +4,8 @@ preview reads it, so they never disagree."""
 import io
 import re
 
+import html
+
 import streamlit as st
 
 from core.clause_data import build_library
@@ -27,6 +29,21 @@ def plain(text):
 def current_limits():
     """The caps chosen on the term sheet (defaults if none were chosen)."""
     return limits_of(st.session_state.get("term_sheet"))
+
+
+def show_table(table_data):
+    """A table of a clause. A cell that runs over several lines needs a real HTML table to show them; the others keep st.table."""
+    rows = table_data["rows"]
+    if not any("\n" in cell for row in rows for cell in row):
+        st.table([dict(zip(table_data["headers"], row)) for row in rows])
+        return
+    cell = ("border:1px solid rgba(128,128,128,0.35);padding:0.35rem 0.6rem;vertical-align:top;text-align:left;"
+            "line-height:1.45")
+    def td(tag, text):
+        return f'<{tag} style="{cell}">{html.escape(text).replace(chr(10), "<br>")}</{tag}>'
+    head = "<tr>" + "".join(td("th", h) for h in table_data["headers"]) + "</tr>"
+    body = "".join("<tr>" + "".join(td("td", c) for c in row) + "</tr>" for row in rows)
+    st.markdown(f'<table style="border-collapse:collapse;width:100%;font-size:0.9rem">{head}{body}</table>', unsafe_allow_html=True)
 
 
 def current_term_sheet():
@@ -144,10 +161,10 @@ def render_preview(state_key, noun="draft", download=True, header=False):
                 st.write(plain(line))
             if i == 0:
                 for table_data in clause.tables:
-                    st.table([dict(zip(table_data["headers"], row)) for row in table_data["rows"]])
+                    show_table(table_data)
         if not items:
             for table_data in clause.tables:
-                st.table([dict(zip(table_data["headers"], row)) for row in table_data["rows"]])
+                show_table(table_data)
 
     if not download:
         return

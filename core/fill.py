@@ -22,6 +22,12 @@ def _text(ts, name):
     return " ".join((getattr(ts, name, "") or "").split())
 
 
+def _lines(ts, name):
+    """A value that runs over several lines keeps its lines; each line loses stray spaces and empty lines are dropped."""
+    raw = (getattr(ts, name, "") or "").replace("\r\n", "\n").replace("\r", "\n")
+    return "\n".join(line for line in (" ".join(l.split()) for l in raw.split("\n")) if line)
+
+
 def parse_decimal(text):
     """A positive number from text such as '10,000,000' or '10000000.50', or None."""
     try:
@@ -180,10 +186,10 @@ def fill_template(library, term_sheet):
                 for c, value in enumerate(cells(inst)):
                     if value is not None and row[c] == BLANK:
                         row[c] = value
-                if inst and _text(inst, "condition"):               # the term sheet's condition wins; a blank keeps the template's
-                    row[3] = _text(inst, "condition")
+                if inst and _lines(inst, "condition"):              # the term sheet's condition wins; a blank keeps the template's
+                    row[3] = _lines(inst, "condition")
             for inst in installments[TEMPLATE_ROWS:]:               # more installments than rows: one more row each
-                table["rows"].append([v or BLANK for v in cells(inst)] + [_text(inst, "condition") or BLANK])
+                table["rows"].append([v or BLANK for v in cells(inst)] + [_lines(inst, "condition") or BLANK])
         price_clause.table_rows = [tuple(row) for row in price_clause.tables[0]["rows"]]
 
     deadline = _item(by_key.get("completion_deadline"), 0)

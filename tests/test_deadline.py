@@ -10,6 +10,7 @@ import openpyxl
 from core.deadline import apply_import, deadline_choice, deadline_warning, is_days, period_days
 from core.term_sheet_fields import TermSheet, missing_required
 from core.xlsx_parser import parse_xlsx
+from tests.xlsx_helper import workbook
 
 BASE = dict(project_name="P", project_location="L", capacity="500", owner_name="O", contractor_name="C", contract_price_number="1000")
 
@@ -51,10 +52,7 @@ def test_the_import_reads_dates_and_periods_and_leaves_the_rest_unchosen():
 
 def test_the_xlsx_import_sets_the_mode():
     def sheet(start, completion):
-        wb = openpyxl.Workbook()
-        wb.active["C60"], wb.active["C61"] = start, completion
-        buf = io.BytesIO(); wb.save(buf); buf.seek(0)
-        return parse_xlsx(buf)
+        return parse_xlsx(workbook({"start_date": start, "completion_date": completion}))
     assert sheet("03 October 2026", "10 October 2026").deadline_mode == "calendar"
     assert sheet("14 days after signing", "120 days after signing").completion_days == "120"
     assert sheet("tbc", "tbc").deadline_mode == ""
