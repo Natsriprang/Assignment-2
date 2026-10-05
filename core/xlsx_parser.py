@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 import openpyxl
 
 from core.capacity import format_number, parse_capacity
+from core.conditions import CONDITION_CLAUSES
 from core.deadline import apply_import
 from core.term_sheet_fields import Installment, TermSheet
 
@@ -108,6 +109,16 @@ def parse_xlsx_report(file):
         filled = [(r, v) for r, v in found if v]
         if filled:
             setattr(ts, field_name, filled[0][1])
+            if any(not _same(v, filled[0][1]) for _, v in filled[1:]):
+                report.conflicts.append(
+                    f"\u201c{label}\u201d appears {len(rows)} times (rows {', '.join(str(r) for r in rows)}) with different "
+                    f"values; the first filled one (row {filled[0][0]}) was used.")
+
+    for key, label in CONDITION_CLAUSES:                  # optional: a template without these rows is not an error
+        rows = rows_by_label.get(_label_key(label))
+        filled = [(r, v) for r, v in ((r, _clean(ws.cell(row=r, column=3).value)) for r in rows or []) if v]
+        if filled:
+            ts.additional_conditions[key] = filled[0][1]
             if any(not _same(v, filled[0][1]) for _, v in filled[1:]):
                 report.conflicts.append(
                     f"\u201c{label}\u201d appears {len(rows)} times (rows {', '.join(str(r) for r in rows)}) with different "

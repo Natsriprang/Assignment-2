@@ -44,7 +44,7 @@ class FakeClient:
 
 
 def empty(**overrides):
-    base = {"clause_actions": [], "deviations": [], "ambiguities": [], "unmapped_requests": []}
+    base = {"clause_actions": [], "deviations": [], "ambiguities": [], "unmapped_requests": [], "suggestions": []}
     base.update(overrides)
     return base
 
@@ -118,14 +118,23 @@ def test_thai_evidence_verified():
     assert validate(raw, lib, comment).clause_actions[0].evidence_verified is True
 
 
-def test_term_sheet_rule_action_verified_against_term_sheet():
+def test_the_roof_owner_rule_gives_a_suggestion_verified_against_the_term_sheet_and_never_an_action():
     ts = sample_term_sheet(roof_owner="Green Land Co., Ltd.")
-    client = FakeClient(empty(clause_actions=[
-        action("owner_representations", "include", "Green Land Co., Ltd.", basis="term_sheet")]))
+    client = FakeClient(empty(suggestions=[{"clause_key": "owner_representations", "reason": "The roof owner is a different party from the Owner.",
+                                            "evidence": "roof_owner: Green Land Co., Ltd."}]))
     result = interpret_request(ts, build_library(), client, conversation=[])
-    assert result.clause_actions[0].evidence_verified is True
-    included = resolve_included(build_library(), result.clause_actions)
-    assert included["owner_representations"] is True
+    assert result.clause_actions == [] and len(result.suggestions) == 1
+    s = result.suggestions[0]
+    assert (s.clause_key, s.evidence_verified, s.reason) == ("owner_representations", True, "The roof owner is a different party from the Owner.")
+    assert resolve_included(build_library(), result.clause_actions)["owner_representations"] is False, "nothing is added: the user ticks it"
+
+
+def test_a_model_that_still_includes_the_clause_for_the_roof_owner_is_turned_into_a_suggestion():
+    ts = sample_term_sheet(roof_owner="Green Land Co., Ltd.")
+    client = FakeClient(empty(clause_actions=[action("owner_representations", "include", "roof_owner: Green Land Co., Ltd.", basis="term_sheet", reason="different party")]))
+    result = interpret_request(ts, build_library(), client, conversation=[])
+    assert result.clause_actions == [] and [s.clause_key for s in result.suggestions] == ["owner_representations"]
+    assert result.suggestions[0].reason == "different party" and result.suggestions[0].evidence_verified is True
 
 
 def dev(key, quote, change_type="modify", change="c", evidence="x", term="liquidated damages",

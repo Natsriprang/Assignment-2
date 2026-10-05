@@ -144,6 +144,68 @@ def test_a_quote_that_spans_two_sentences_keeps_the_request_but_cannot_be_rewrit
     assert inside.deviations[0].new_text                         # a quote inside one sentence is fine
 
 
+# ---------------------------------------------------------------- taking a point out (the reported case)
+FM_REQUEST = "exclude epidemics and lockdowns for payment"
+
+
+def fm_library():
+    return lib()
+
+
+def test_the_reported_case_the_whole_point_is_taken_out_whatever_the_ai_wrote_as_new_text():
+    garbage = ("In case of a Force Majeure event, the affected Party shall notify the other Party in writing immediately. If force majeure "
+               "continues for 180 (one hundred and eighty) consecutive days, either Party has the right to terminate this Agreement.")
+    for quote in ("7) epidemic.", "epidemic"):
+        raw = dev("force_majeure", quote, change_type="remove_part", change="Exclude epidemics and lockdowns for payment",
+                  evidence=FM_REQUEST, term="force majeure", new_text=garbage)
+        d = validate(empty(deviations=[raw]), fm_library(), FM_REQUEST).deviations[0]
+        assert d.removes and d.old_text == "7) epidemic." and d.rewrite_problem == "" and d.written_by == "", quote
+
+
+def test_an_empty_new_text_is_enough_for_a_removal_and_no_figure_check_applies():
+    raw = dev("force_majeure", "7) epidemic.", change_type="remove_part", change="Exclude epidemics", evidence="exclude epidemics",
+              term="force majeure", new_text="")
+    d = validate(empty(deviations=[raw]), fm_library(), "exclude epidemics").deviations[0]
+    assert d.removes and d.new_text == "" and d.rewrite_problem == ""
+
+
+def test_a_quote_that_is_only_part_of_a_point_is_an_ordinary_change():
+    raw = dev("force_majeure", "land expropriation", change_type="remove_part", change="drop land expropriation", evidence="drop land expropriation",
+              term="force majeure", new_text="5) government intervention; or")
+    d = validate(empty(deviations=[raw]), fm_library(), "drop land expropriation").deviations[0]
+    assert not d.removes and d.new_text == "5) government intervention; or"
+
+
+def test_only_a_remove_part_can_take_a_whole_point_out():
+    raw = dev("force_majeure", "7) epidemic.", change_type="modify", change="change epidemic", evidence="change epidemic", term="force majeure", new_text="")
+    d = validate(empty(deviations=[raw]), fm_library(), "change epidemic").deviations[0]
+    assert not d.removes
+
+
+def test_the_only_point_of_a_list_is_not_taken_out():
+    library = lib()
+    next(c for c in library if c.key == "force_majeure").items[1].lettered = ["1) epidemic."]
+    raw = dev("force_majeure", "1) epidemic.", change_type="remove_part", change="x", evidence="x", term="force majeure", new_text="")
+    d = validate(empty(deviations=[raw]), library, "x").deviations[0]
+    assert not d.removes and "only point of its list" in d.rewrite_problem
+
+
+def test_the_prompt_says_to_leave_new_text_empty_when_the_whole_point_goes():
+    p = " ".join(SYSTEM_PROMPT.split())
+    assert 'whose provision_quote is the whole point or sentence' in p and "leave new_text as an empty string" in p
+    assert "takes the whole point out and puts the numbering and punctuation of its list right" in p
+
+
+def test_a_request_for_what_is_already_taken_out_is_not_a_new_request():
+    from ai.interpret import UnmappedRequest, settle, Interpretation
+    removed = {"id": "r", "clause_key": "force_majeure", "change_type": "remove", "old": "7) epidemic.", "new": "", "summary": "s"}
+    again = UnmappedRequest("exclude epidemics and lockdowns for payment", "exclude epidemics and lockdowns for payment", True)
+    other = UnmappedRequest("add a two year warranty clause", "add a two year warranty clause", True)
+    r = Interpretation(); r.unmapped_requests = [again, other]
+    r = settle(r, library_for({}, edits=[removed]), [], [removed])
+    assert r.unmapped_requests == [other] and any("already been taken out" in n for n in r.notes)
+
+
 # ---------------------------------------------------------------- adding a sentence
 def test_an_added_sentence_is_checked_for_figures_and_repeats():
     ask = "add a 24 months warranty"

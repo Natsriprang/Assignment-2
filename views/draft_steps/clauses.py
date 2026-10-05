@@ -15,6 +15,7 @@ from ai.llm import MODEL, AIStepError, CountingClient, get_client
 from ai.references import select_references
 from core import wording
 from core.clause_data import build_library
+from core.conditions import CONDITION_CLAUSES, conditions_of
 from core.draft_state import library_for
 from core.figures import numbers_in
 from core.placement import placement_from_references
@@ -29,6 +30,10 @@ DRAFTS_KEY = drafts.DRAFTS_KEY       # request id -> DraftedClause
 REQUEST_SEQ_KEY = "new_clause_request_seq"   # last request id handed out; ids are never reused
 REQUESTS_KEY = "new_clause_requests"  # [{"id": int, "text": str}] in the order the requests were first raised
 STEP_NAME = "interpret"
+AUTO_KEY = "auto_analysis"           # the term sheet the first analysis was started on by itself, so it is not started again on every run
+NO_REQUEST_BUTTON = "No special requests \u2014 apply the term sheet's rules"
+NO_REQUEST_NOTE = ("This runs one AI analysis. With no request from you it looks only at what the term sheet itself calls for, "
+                   "for example suggesting the Owner's Representations clause when the roof owner is a different party from the Owner.")
 
 
 def plain(text):
@@ -57,8 +62,9 @@ def applicable(d):
 
 
 def default_text(d):
-    """What the New wording box starts with: the AI's sentence, else the current sentence for the user to change."""
-    return d.new_text or (d.old_text if d.change_type != "add" else "")
+    """The new wording to start with: the AI's sentence; for a change that takes a point out, nothing (it is taken out); else the
+    current sentence for the user to change."""
+    return d.new_text or (d.old_text if d.change_type != "add" and not d.removes else "")
 
 
 def current_text(d):
@@ -67,7 +73,9 @@ def current_text(d):
 
 
 def start_wording_edit(d):
-    wording_state.start_edit(deviation_key(d), current_text(d))
+    """Edit opens the wording as one text; for a point that is being taken out it starts with that point (an empty text keeps it
+    taken out, a different text replaces it)."""
+    wording_state.start_edit(deviation_key(d), current_text(d) or (d.old_text if d.removes else ""))
 
 
 def save_wording(key, widget):
@@ -80,6 +88,8 @@ def cancel_wording(key, widget):
 
 def checked_problem(d, text):
     """What the checks find wrong with `text` as the new wording; "" when nothing. Advice only: it never blocks."""
+    if d.removes and not text:
+        return ""                                               # taking the whole point out needs no new wording
     if not text:
         return "There is no new wording yet."
     old = d.old_text if d.change_type != "add" else ""
@@ -88,7 +98,7 @@ def checked_problem(d, text):
 
 def default_tick(d):
     """Apply is ticked at the start only when there is wording and the checks have nothing to say."""
-    return d.evidence_verified and applicable(d) and bool(d.new_text) and not d.rewrite_problem
+    return d.evidence_verified and applicable(d) and (bool(d.new_text) or d.removes) and not d.rewrite_problem
 
 
 def show_lines(lines):
@@ -241,6 +251,8 @@ def display_text(result, latest):
     parts = []
     if changes:
         parts.append(f"{changes} proposed change{'s' if changes != 1 else ''}")
+    if result.suggestions:
+        parts.append(f"{len(result.suggestions)} suggestion{'s' if len(result.suggestions) != 1 else ''}")
     if new:
         parts.append(f"{new} new clause request{'s' if new != 1 else ''}")
     if questions:
@@ -297,11 +309,12 @@ def apply_proposals(msg):
             continue
         title = titles.get(d.clause_key, d.clause_key)
         text = current_text(d)
+        removing = d.removes and not text
         if not applicable(d):
             applied.append(f"Not applied: {title}: {d.summary} (I could not tell which sentence it changes)")
-        elif not text or (d.change_type != "add" and text.lower() == wording.norm(d.old_text).lower()):
+        elif not removing and (not text or (d.change_type != "add" and text.lower() == wording.norm(d.old_text).lower())):
             applied.append(f"Not applied: {title}: {d.summary} (the wording was not changed)")
-        elif write_wording_change(d, text, undo):
+        elif write_wording_change(d, text, undo, removing):
             chosen.append(d)
             applied.append(f"Wording changed in {title}: {d.summary}")
         else:
@@ -330,7 +343,7 @@ def undo_apply(msg):
     msg["applied"] = None
 
 
-def write_wording_change(d, text, undo=None):
+def write_wording_change(d, text, undo=None, removing=False):
     """Writes one accepted wording change into the draft: a template clause through the recorded changes, a clause the user
     had drafted through its own saved wording. `text` is the new wording as the user left it. False when the sentence is not
     there any more."""
@@ -342,9 +355,10 @@ def write_wording_change(d, text, undo=None):
         if undo is not None and entry_id not in undo["saved"]:
             previous = st.session_state.get(drafts.SAVED_STORE, {}).get(entry_id)
             undo["saved"][entry_id] = list(previous) if previous is not None else None
-        return drafts.reword(entry_id, drafted, d.change_type, d.old_text, text)
-    edit = {"id": widget_key("edit", d.clause_key, d.change_type, d.old_text, text),
-            "clause_key": d.clause_key, "change_type": d.change_type, "old": d.old_text, "new": text, "summary": d.summary}
+        return drafts.reword(entry_id, drafted, "remove" if removing else d.change_type, d.old_text, text)
+    kind = "remove" if removing else d.change_type
+    edit = {"id": widget_key("edit", d.clause_key, kind, d.old_text, text),
+            "clause_key": d.clause_key, "change_type": kind, "old": d.old_text, "new": "" if removing else text, "summary": d.summary}
     if wording_state.add_edit(edit) and undo is not None:
         undo["edit_ids"].append(edit["id"])
     return True
@@ -411,6 +425,12 @@ def render_deviation(d, lookup, msg):
             if d.change_type == "add":
                 st.caption("A new sentence at the end of this clause")
                 st.markdown(f"**{plain(text)}**" if text else "_(nothing yet)_")
+            elif d.removes and not text:
+                before, _ = wording.diff_markup(d.old_text, "")
+                st.caption("Current wording")
+                st.markdown(before)
+                st.caption("New wording")
+                st.markdown("_Taken out of the clause._")
             else:
                 before, after = wording.diff_markup(d.old_text, text)
                 st.caption("Current wording")
@@ -460,7 +480,8 @@ def render_results(msg, clauses, turn, stale, all_clauses=None):
     quick_reply, draft_request = None, None
 
     st.subheader("What I found")
-    if not (proposals or questions or requests or rejected):
+    suggestions = [s for s in result.suggestions if not lookup[s.clause_key].included]       # gone once the user ticks the clause
+    if not (proposals or questions or requests or rejected or suggestions):
         st.write("No changes to the standard contract.")
 
     open_actions = [a for a in result.clause_actions if action_key(a) not in rejected]
@@ -526,6 +547,12 @@ def render_results(msg, clauses, turn, stale, all_clauses=None):
                 if c2.button("No, something else", key=widget_key("no", str(turn), str(i))):
                     quick_reply = f"No, by \u201c{said}\u201d I did not mean the '{title}' clause."
 
+    if suggestions:
+        st.markdown("**Suggestions**")
+        for s in suggestions:
+            st.info(f"Suggestion: add {plain(lookup[s.clause_key].title)}. {plain(s.reason)} "
+                    "Tick it under Optional clauses if you want it in the draft.")
+
     if result.notes:
         with st.expander("Automatic checks"):
             st.caption("Proposals the system discarded because they were invalid or changed nothing.")
@@ -550,6 +577,7 @@ def render():
 
     if st.sidebar.button("Clear conversation"):
         st.session_state.pop("chat", None)
+        st.session_state.pop(AUTO_KEY, None)
         st.rerun()
 
     calls = st.session_state.setdefault(flow.CALLS_KEY, [])
@@ -578,13 +606,29 @@ def render():
         st.warning("The term sheet changed after the latest reply. Send a message to analyse again "
                    "before applying.")
 
-    skip = False
+    conditions = conditions_of(ts)
+    snapshot = term_sheet_text(ts)
+    # With additional conditions in the term sheet the first analysis has real work and starts by itself, once for this term sheet.
+    auto = bool(conditions) and not chat and not has_analysis() and client is not None and st.session_state.get(AUTO_KEY) != snapshot
+    if auto:
+        st.session_state[AUTO_KEY] = snapshot
+    skip = auto
     if not chat:
         with st.chat_message("assistant"):
-            st.write("What would you like to change from the standard contract? For example: "
-                     "\u201cclient wants to drop the construction timeline\u201d. I also check the term "
-                     "sheet itself, for example whether the roof owner is a different party from the Owner.")
-            skip = st.button("No special requests \u2014 just check the term sheet", disabled=client is None)
+            if conditions:
+                names = ", ".join(plain(label) for key, label in CONDITION_CLAUSES if key in conditions)
+                st.write(f"The term sheet has additional conditions for {len(conditions)} clause"
+                         f"{'s' if len(conditions) != 1 else ''} ({names}). I read them as requests: the proposals are below. "
+                         "You can ask for more changes in the chat, for example: "
+                         "\u201cclient wants to drop the construction timeline\u201d.")
+                if client is not None and not auto:
+                    skip = st.button("Read the additional conditions again")
+            else:
+                st.write("What would you like to change from the standard contract? For example: "
+                         "\u201cclient wants to drop the construction timeline\u201d. I also check the term "
+                         "sheet itself, for example whether the roof owner is a different party from the Owner.")
+                skip = st.button(NO_REQUEST_BUTTON, disabled=client is None)
+                st.caption(NO_REQUEST_NOTE)
 
     for i, msg in enumerate(chat):
         with st.chat_message(msg["role"]):
@@ -632,7 +676,7 @@ def render():
             with st.chat_message("user"):
                 show_lines(text.split("\n"))
         with st.chat_message("assistant"):
-            with st.spinner("Thinking..."):
+            with st.spinner("Reading the additional conditions..." if auto else "Thinking..."):
                 error = None
                 try:
                     result = interpret_request(
@@ -659,5 +703,7 @@ def render():
                    "changes\u201d first, or continue without them.")
     if not has_analysis():
         st.caption("Run the analysis once to continue: send a message, or press "
-                   "\u201cNo special requests\u201d.")
+                   "\u201cNo special requests\u201d." if not conditions else
+                   "The analysis of the additional conditions has not run yet. Enter an API key, or press \u201cRead the additional "
+                   "conditions again\u201d.")
     st.button("Continue \u2192", type="primary", on_click=flow.go_next, disabled=not has_analysis())

@@ -117,6 +117,11 @@ def reword(entry_id, drafted, change_type, old, new):
     sentences = sentences_of(entry_id, drafted)
     if change_type == "add":
         sentences.append(tidy(new))
+    elif change_type == "remove":
+        at = next((i for i, s in enumerate(sentences) if tidy(s).lower() == tidy(old).lower()), None)
+        if at is None:
+            return False
+        del sentences[at]
     else:
         at = next((i for i, s in enumerate(sentences) if tidy(s).lower() == tidy(old).lower()), None)
         if at is None:

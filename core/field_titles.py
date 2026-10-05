@@ -42,6 +42,7 @@ FIELD_TITLES = {
     "completion_date": "Completion date",
     "completion_days": "Complete within (days after signing)",
     "attachment_no": "Attachment no. that yields to the Agreement",
+    "additional_conditions": "Additional conditions",
     "limits": "Limits",
     **_contact("owner", "Owner contact"),
     **_contact("contractor", "Contractor contact"),

@@ -13,8 +13,8 @@ from core.draft_state import library_for
 from core.header import build_header
 from core.render import render_docx
 from core.renumber import renumber_and_render
-from core.wording import (apply_edits, check_rewrite, diff_markup, figure_mismatches, figure_swap, find_unit, norm, splice_fragment,
-                          units)
+from core.wording import (apply_edits, check_rewrite, diff_markup, figure_mismatches, figure_swap, find_unit, norm, removable, removal_of,
+                          splice_fragment, units)
 
 LD_QUOTE = "at the rate of 0.05 (zero point zero five) percent of the Contract Price per day"
 REQ = "Reduce the delay damages rate to 0.03% per day. reduce delay damages to 0.03% per day"
@@ -156,6 +156,93 @@ def test_the_system_does_not_guess_which_figure_or_what_the_new_one_is():
     assert figure_swap("Pay within thirty days.", "within thirty days", "make it 15 days") == ""      # no digits-and-words pair to replace
 
 
+# ---------------------------------------------------------------- taking a whole point or sentence out
+def take_out(key, quote):
+    loc, unit = find_unit(clause(key), quote)
+    edit = {"id": f"rm-{key}-{len(unit)}", "clause_key": key, "change_type": "remove", "old": unit, "new": "", "summary": "s"}
+    return clause(key, library_for({}, edits=[edit])), loc
+
+
+def test_a_quote_that_is_all_of_a_unit_removes_the_unit():
+    point = "7) epidemic."
+    assert removal_of(point, "epidemic") and removal_of(point, "7) epidemic.") and removal_of(point, "epidemic.")
+    assert not removal_of(point, "epid") and not removal_of(point, "something else")
+    sentence = "The Owner shall pay the Contractor within 30 (thirty) working days."
+    assert removal_of(sentence, sentence) and not removal_of(sentence, "within 30 (thirty) working days")
+    assert removable(("lettered", 1, 6)) and removable(("item", 0)) and removable(("paragraph", 1)) and not removable(("cell", 0, 1, 3))
+
+
+def test_the_last_point_of_a_list_goes_and_the_one_before_it_takes_the_full_stop():
+    c, loc = take_out("force_majeure", "epidemic")
+    points = c.items[1].lettered
+    assert loc == ("lettered", 1, 6) and len(points) == 6 and points[-1] == "6) any change in law or government action."
+    assert all(p.endswith("; or") for p in points[:-1]) and not any("epidemic" in p for p in points)
+
+
+def test_a_middle_point_goes_and_the_labels_are_counted_again():
+    c, _ = take_out("force_majeure", "protests and/or other strikes")
+    points = c.items[1].lettered
+    assert [p[:2] for p in points] == ["1)", "2)", "3)", "4)", "5)", "6)"] and points[2].startswith("3) war, invasion")
+    assert points[-1] == "6) epidemic." and all(p.endswith("; or") for p in points[:-1])
+
+
+def test_the_or_goes_back_one_when_the_point_that_carried_it_is_taken_out():
+    c, _ = take_out("confidentiality", "Confidential information which was already in")
+    first, last = c.items[2].lettered
+    assert first.startswith("(1)") and first.endswith("; or") and last.startswith("(2)") and last.endswith(".")
+
+
+def test_lettered_lists_are_counted_in_letters_and_the_last_point_keeps_the_full_stop():
+    c, _ = take_out("termination", "abandons the Works")
+    a, b = c.items[1].lettered
+    assert a.startswith("(a)") and a.endswith(";") and b.startswith("(b)") and b.endswith(".")
+    c, _ = take_out("termination", "fails to comply with the notice under clause 1")
+    assert [p[:3] for p in c.items[1].lettered] == ["(a)", "(b)"] and c.items[1].lettered[-1].endswith("reasonable cause.")
+
+
+def test_the_only_point_of_a_list_cannot_be_taken_out_on_its_own():
+    library = library_for({})
+    c = clause("force_majeure", library)
+    c.items[1].lettered = ["1) epidemic."]
+    edit = {"id": "x", "clause_key": "force_majeure", "change_type": "remove", "old": "1) epidemic.", "new": "", "summary": "s"}
+    failed = []
+    apply_edits(library, [edit], failed)
+    assert failed == [edit] and c.items[1].lettered == ["1) epidemic."]
+
+
+def test_a_numbered_sentence_and_a_paragraph_can_be_taken_out():
+    notice = clause("notice")
+    second = notice.plain_paragraphs[1]
+    c = clause("notice", library_for({}, edits=[{"id": "p", "clause_key": "notice", "change_type": "remove", "old": second, "new": "", "summary": "s"}]))
+    assert c.plain_paragraphs == [notice.plain_paragraphs[0]]
+    dead = clause("completion_deadline").items[1].text
+    c = clause("completion_deadline", library_for({}, edits=[{"id": "i", "clause_key": "completion_deadline", "change_type": "remove", "old": dead, "new": "", "summary": "s"}]))
+    assert len(c.items) == len(clause("completion_deadline").items) - 1 and not any(norm(i.text) == norm(dead) for i in c.items)
+    lines = next(items for n, cl, items in renumber_and_render(library_for({}, edits=[{"id": "i", "clause_key": "completion_deadline", "change_type": "remove", "old": dead, "new": "", "summary": "s"}])) if cl.key == "completion_deadline")
+    assert [l.split(" ", 1)[0] for l in lines] == [f"6.{n}" for n in range(1, len(lines) + 1)]            # the numbers close up by themselves
+
+
+def test_a_removal_whose_sentence_is_gone_is_not_applied_and_the_rest_of_the_list_is_untouched():
+    failed = []
+    stale = {"id": "s", "clause_key": "force_majeure", "change_type": "remove", "old": "9) not a point.", "new": "", "summary": "s"}
+    library_for({}, edits=[stale], failed=failed)
+    assert failed == [stale]
+
+
+def test_a_removal_reaches_the_word_file():
+    edit = {"id": "r", "clause_key": "force_majeure", "change_type": "remove", "old": "7) epidemic.", "new": "", "summary": "s"}
+    buf = io.BytesIO()
+    render_docx(library_for({}, edits=[edit]), buf, header=build_header(None))
+    buf.seek(0)
+    text = "\n".join(p.text for p in Document(buf).paragraphs)
+    assert "epidemic" not in text and "6) any change in law or government action." in text
+
+
+def test_the_before_and_after_of_a_removal():
+    before, after = diff_markup("7) epidemic.", "")
+    assert before == "**7) epidemic.**" and after == ""
+
+
 # ---------------------------------------------------------------- applying
 def edit(change_type, old, new, key="completion_deadline"):
     return {"id": f"{key}-{change_type}-{len(new)}", "clause_key": key, "change_type": change_type, "old": old, "new": new, "summary": "s"}
@@ -230,13 +317,16 @@ def test_the_changed_sentence_reaches_the_word_file():
 
 
 # ---------------------------------------------------------------- before and after
-def test_the_markup_strikes_what_goes_and_bolds_what_comes():
+def test_both_sides_are_whole_and_bold_what_changes():
     old = "The Owner may claim damages at the rate of 0.05 (zero point zero five) percent per day."
     before, after = diff_markup(old, old.replace("0.05 (zero point zero five)", "0.03 (zero point zero three)"))
-    assert "~~0.05~~" in before and "(zero point zero ~~five)~~" in before and "**0.03**" in after and "**three)**" in after
-    assert before.replace("~~", "").replace("\\", "") == old and after.replace("**", "") == old.replace("0.05", "0.03").replace("five", "three")
+    assert "~~" not in before, "nothing is struck through"
+    assert "**0.05**" in before and "**five)**" in before and "**0.03**" in after and "**three)**" in after, "the changed words are bold on both sides"
+    assert before.replace("**", "").replace("\\", "") == old and after.replace("**", "") == old.replace("0.05", "0.03").replace("five", "three")
+    assert before.startswith("The Owner may claim") and after.startswith("The Owner may claim"), "both sides are the whole text"
     assert diff_markup("same words", "same words") == ("same words", "same words")
-    assert diff_markup("a [b] *c*", "a [b] *d*")[0] == "a \\[b\\] ~~\\*c\\*~~"                       # markdown characters are escaped
+    assert diff_markup("pay within 30 days", "pay within 30 days and 15 hours")[0] == "pay within 30 days"           # words only put in: nothing bold in the current wording
+    assert diff_markup("a [b] *c*", "a [b] *d*") == ("a \\[b\\] **\\*c\\***", "a \\[b\\] **\\*d\\***")           # markdown characters are escaped
 
 
 def test_norm_is_one_line_with_single_spaces():

@@ -7,6 +7,7 @@ import streamlit as st
 
 from core.capacity import UNITS, parse_capacity
 from core.clause_params import PARAMS
+from core.conditions import CONDITION_CLAUSES
 from core.deadline import deadline_choice, deadline_warning, is_days
 from core.term_sheet_fields import TermSheet, Installment, ensure_fields, missing_required, signing_place
 from core.vat import vat_choice, vat_warning
@@ -78,6 +79,9 @@ def render():
         if parsed.start_date or parsed.completion_date:                 # the mode and the days go with the two cells they come from
             for f in DEADLINE_FIELDS:
                 setattr(st.session_state.term_sheet, f, getattr(parsed, f))
+
+        if parsed.additional_conditions:                                # the boxes the Excel fills; the others keep what the user wrote
+            st.session_state.term_sheet.additional_conditions.update(parsed.additional_conditions)
 
         st.session_state.form_version += 1  # see the note on `v` above
         if not report.nothing_found:
@@ -206,6 +210,17 @@ def render():
         ts.contractor_contact_location = st.text_input("Location", ts.contractor_contact_location, key=f"con_cl_{v}")
         ts.contractor_contact_phone = st.text_input("Phone", ts.contractor_contact_phone, key=f"con_cph_{v}")
         ts.contractor_contact_email = st.text_input("Email", ts.contractor_contact_email, key=f"con_cem_{v}")
+
+    with st.expander("Additional conditions (optional)", expanded=bool(ts.additional_conditions)):
+        st.caption("Changes you want to the standard wording of a clause, one box per clause. On the next step the AI reads each "
+                   "one as if you had typed it in the chat, and proposes the change for you to apply or reject. Leave a box "
+                   "empty for no change.")
+        for key, label in CONDITION_CLAUSES:
+            text = st.text_area(label, ts.additional_conditions.get(key, ""), key=f"cond_{key}_{v}", height=90)
+            if text.strip():
+                ts.additional_conditions[key] = text
+            else:
+                ts.additional_conditions.pop(key, None)
 
     st.divider()
     term_check.show_result(ts)

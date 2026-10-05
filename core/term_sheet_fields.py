@@ -42,6 +42,7 @@ class TermSheet:
     installments: list = field(default_factory=list)  # list[Installment] -- variable length
 
     attachment_no: str = ""            # the attachment that yields to the Agreement if they differ
+    additional_conditions: dict = field(default_factory=dict)   # clause key -> changes wanted to its standard wording (see core.conditions)
 
     deadline_mode: str = ""            # "calendar" | "period" | "" -- which pair below the contract uses
     start_date: str = ""               # calendar dates ...
@@ -71,14 +72,17 @@ REQUIRED_FIELDS = [
 
 NEW_FIELD_DEFAULTS = {"owner_country": "", "contractor_country": "Thailand", "signing_place_choice": "",
                       "signing_place_other": "", "payment_days": "30", "attachment_no": "",
-                      "deadline_mode": "", "completion_days": "", "owner_contact_email": "", "contractor_contact_email": ""}
+                      "deadline_mode": "", "completion_days": "", "owner_contact_email": "", "contractor_contact_email": "",
+                      "additional_conditions": dict}
 
 
 def ensure_fields(term_sheet):
     """Gives a term sheet object saved by an older version of the app the fields added since."""
     for name, default in NEW_FIELD_DEFAULTS.items():
         if not hasattr(term_sheet, name):
-            setattr(term_sheet, name, default)
+            setattr(term_sheet, name, default() if callable(default) else default)
+    if not isinstance(term_sheet.additional_conditions, dict):          # whatever else was stored there is not a set of boxes
+        term_sheet.additional_conditions = {}
     return term_sheet
 
 

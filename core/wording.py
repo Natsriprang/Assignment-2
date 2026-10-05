@@ -146,6 +146,88 @@ def check_rewrite(old, new, change_type, quote, request_text):
     return ""
 
 
+# ---------------------------------------------------------------------------------------- taking a point or sentence out
+def removal_of(unit_text, quote):
+    """True when taking `quote` out of `unit_text` leaves no words (only a list label such as "7)" and punctuation): the change
+    removes the whole point or sentence, and the unit itself is taken out."""
+    span = _quote_span(unit_text, quote)
+    if span is None:
+        return False
+    rest = norm(unit_text)[:span[0]] + " " + norm(unit_text)[span[1]:]
+    return not re.search(r"[A-Za-z]{2,}", rest)
+
+
+def removable(loc):
+    """A table cell cannot be taken out; a numbered sentence, a lettered point and a paragraph can."""
+    return loc[0] in ("paragraph", "item", "lettered")
+
+
+_LABEL = re.compile(r"^\s*(?:\((\d+)\)|(\d+)\)|\(([a-z])\)|([a-z])\))\s+")
+_ENDING = re.compile(r"\s*(?:;\s*(?:or|and)|[;.,])\s*$", re.IGNORECASE)
+
+
+def _ending(text):
+    m = _ENDING.search(text)
+    return m.group(0).strip() if m else None
+
+
+def _relabel(points):
+    """The labels of a list after a point was taken out: "1)", "(1)", "a)" or "(a)" counted again from the start. A list whose
+    labels are not all of one of these kinds is left as it is."""
+    matches = [_LABEL.match(p) for p in points]
+    if not points or not all(matches):
+        return points
+    kinds = {next(i for i, g in enumerate(m.groups()) if g is not None) for m in matches}
+    if len(kinds) != 1:
+        return points
+    kind = kinds.pop()
+    out = []
+    for n, (p, m) in enumerate(zip(points, matches)):
+        mark = str(n + 1) if kind in (0, 1) else chr(ord("a") + n)
+        label = {0: f"({mark})", 1: f"{mark})", 2: f"({mark})", 3: f"{mark})"}[kind]
+        out.append(label + " " + p[m.end():])
+    return out
+
+
+def _with_ending(point, ending):
+    return _ENDING.sub("", point) + ending
+
+
+def _fix_endings(points, endings, removed):
+    """The punctuation of a list after the point at index `removed` was taken out. Each point keeps its own ending, except that
+    a last point taken out hands its ending (the full stop) to the new last one, and a second-to-last point taken out hands its
+    "; or" / "; and" to the one before it. Left as it is when any point of the original list ended in something else."""
+    if not points or any(e is None for e in endings):
+        return points
+    n, out = len(endings), list(points)
+    if removed == n - 1:
+        out[-1] = _with_ending(out[-1], endings[-1])
+    elif removed == n - 2 and len(out) >= 2 and re.search(r"(or|and)$", endings[removed], re.IGNORECASE):
+        out[-2] = _with_ending(out[-2], endings[removed])
+    return out
+
+
+def _delete(clause, loc):
+    """Takes the unit at `loc` out of the clause. Numbers of sentences follow by themselves; the labels and the punctuation of a
+    list are put right. False when it cannot be done (the only point of a list)."""
+    kind = loc[0]
+    if kind == "paragraph":
+        del clause.plain_paragraphs[loc[1]]
+        return True
+    if kind == "item":
+        del clause.items[loc[1]]
+        return True
+    if kind == "lettered":
+        item = clause.items[loc[1]]
+        if len(item.lettered) < 2:
+            return False
+        endings = [_ending(p) for p in item.lettered]
+        points = item.lettered[:loc[2]] + item.lettered[loc[2] + 1:]
+        item.lettered = _relabel(_fix_endings(points, endings, loc[2]))
+        return True
+    return False
+
+
 # ---------------------------------------------------------------------------------------- repairing a proposal
 def _quote_span(old, quote):
     at = norm(old).lower().find(norm(quote).lower())
@@ -220,8 +302,7 @@ def apply_edits(library, edits, failed=None):
         elif clause is not None:
             for loc, text in units(clause):
                 if norm(text) == norm(edit["old"]):
-                    _write(clause, loc, edit["new"])
-                    ok = True
+                    ok = _delete(clause, loc) if edit["change_type"] == "remove" else (_write(clause, loc, edit["new"]) or True)
                     break
         if not ok and failed is not None:
             failed.append(edit)
@@ -249,7 +330,8 @@ def _escape(word):
 
 
 def diff_markup(old, new):
-    """(old, new) as markdown for the page: words taken out are struck through, words put in are bold."""
+    """(old, new) as markdown for the page: the whole of both texts, with the words that are changed in bold on both sides (the words
+    to be changed in the current wording, the words they become in the new wording)."""
     old_w, new_w = norm(old).split(), norm(new).split()
     matcher = difflib.SequenceMatcher(None, [w.lower() for w in old_w], [w.lower() for w in new_w], autojunk=False)
     before, after = [], []
@@ -260,7 +342,7 @@ def diff_markup(old, new):
             after += put
             continue
         if gone:
-            before.append("~~" + " ".join(gone) + "~~")
+            before.append("**" + " ".join(gone) + "**")
         if put:
             after.append("**" + " ".join(put) + "**")
     return " ".join(before), " ".join(after)
