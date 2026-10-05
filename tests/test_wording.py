@@ -13,7 +13,8 @@ from core.draft_state import library_for
 from core.header import build_header
 from core.render import render_docx
 from core.renumber import renumber_and_render
-from core.wording import apply_edits, check_rewrite, diff_markup, figure_mismatches, find_unit, norm, units
+from core.wording import (apply_edits, check_rewrite, diff_markup, figure_mismatches, figure_swap, find_unit, norm, splice_fragment,
+                          units)
 
 LD_QUOTE = "at the rate of 0.05 (zero point zero five) percent of the Contract Price per day"
 REQ = "Reduce the delay damages rate to 0.03% per day. reduce delay damages to 0.03% per day"
@@ -96,6 +97,63 @@ def test_removing_part_of_a_sentence():
     assert check_rewrite(old, "The Contractor shall provide the Owner with weekly progress reports.", "remove_part", quote, "remove the photographs") == ""
     assert "still in the new wording" in check_rewrite(old, old.replace("progress", "interim progress"), "remove_part", quote, "remove the photographs")
     assert "much more" in check_rewrite(old, "The Contractor shall provide.", "remove_part", quote, "remove the photographs")
+
+
+# ---------------------------------------------------------------- repairing a proposal
+LONG_QUOTE = ("the Owner has the right to claim liquidated damages from the Contractor at the rate of 0.05 (zero point zero five) percent of "
+              "the Contract Price per day but not more than 5 (five) percent of the Contract Price.")
+REQUEST_2 = "Reduce the liquidated damages rate to 0.03% reduce the delay damage to 0.03%"
+
+
+def test_only_the_quoted_words_given_back_are_put_into_the_sentence():
+    old = find_unit(clause("completion_deadline"), LD_QUOTE)[1]
+    fragment = LONG_QUOTE.replace("0.05 (zero point zero five)", "0.03 (zero point zero three)")
+    assert "much more of the sentence" in check_rewrite(old, fragment, "modify", LONG_QUOTE, REQUEST_2)           # the reported refusal
+    whole = splice_fragment(old, LONG_QUOTE, fragment)
+    assert whole == old.replace("0.05 (zero point zero five)", "0.03 (zero point zero three)")
+    assert check_rewrite(old, whole, "modify", LONG_QUOTE, REQUEST_2) == ""
+
+
+def test_a_fragment_in_the_middle_keeps_the_words_on_both_sides():
+    old = "The Owner shall pay the Contractor within 30 (thirty) working days after receipt of the invoice, without any deduction."
+    got = splice_fragment(old, "within 30 (thirty) working days", "within 15 (fifteen) working days")
+    assert got == "The Owner shall pay the Contractor within 15 (fifteen) working days after receipt of the invoice, without any deduction."
+    ended = splice_fragment("Pay within 30 (thirty) days.", "within 30 (thirty) days", "within 15 (fifteen) days.")
+    assert ended == "Pay within 15 (fifteen) days."                                           # a full stop is not doubled
+
+
+def test_a_whole_sentence_or_an_unrelated_text_is_not_treated_as_a_fragment():
+    old = find_unit(clause("completion_deadline"), LD_QUOTE)[1]
+    assert splice_fragment(old, LD_QUOTE, old.replace("0.05 (zero point zero five)", "0.03 (zero point zero three)")) == ""
+    assert splice_fragment(old, LD_QUOTE, "The Contractor shall do something entirely different.") == ""
+    assert splice_fragment(old, "a quote that is not there", "x") == "" and splice_fragment(old, LD_QUOTE, "") == ""
+
+
+def test_the_system_writes_one_figure_and_its_words_itself():
+    old = find_unit(clause("completion_deadline"), LD_QUOTE)[1]
+    got = figure_swap(old, LD_QUOTE, "reduce the rate to 0.03% per day")
+    assert got == old.replace("0.05 (zero point zero five)", "0.03 (zero point zero three)")        # one figure in the quote: replaced
+    one = "at the rate of 0.05 (zero point zero five) percent of the Contract Price per day"
+    got = figure_swap(old, one, "reduce the rate to 0.03% per day")
+    assert got == old.replace("0.05 (zero point zero five)", "0.03 (zero point zero three)")
+    assert check_rewrite(old, got, "modify", one, "reduce the rate to 0.03% per day") == ""
+    pay = "The Owner shall pay within 30 (thirty) working days."
+    assert figure_swap(pay, "within 30 (thirty) working days", "make it 45 working days") == "The Owner shall pay within 45 (forty-five) working days."
+    assert figure_swap(pay, "within 30 (thirty) working days", "make it 120 working days") == "The Owner shall pay within 120 (one hundred and twenty) working days."
+    pct = "not more than 5% (five percent) of the Contract Price"
+    assert figure_swap(pct, "5% (five percent)", "cap it at 8%") == "not more than 8% (eight percent) of the Contract Price"
+    assert figure_swap(pct, "5% (five percent)", "cap it at 2.5%") == "not more than 2.5% (two point five percent) of the Contract Price"
+
+
+def test_the_system_does_not_guess_which_figure_or_what_the_new_one_is():
+    old = find_unit(clause("completion_deadline"), LD_QUOTE)[1]
+    assert figure_swap(old, LONG_QUOTE, "reduce the rate to 0.03% per day") == ""                    # two figures in the quote: which one?
+    one = "at the rate of 0.05 (zero point zero five) percent of the Contract Price per day"
+    assert figure_swap(old, one, "reduce the rate") == ""                                            # no new figure
+    assert figure_swap(old, one, "reduce the rate to 0.03% per day or 0.02%") == ""                 # two new figures
+    assert figure_swap(old, one, "reduce the rate to 0.0123% per day") == ""                         # more than two decimals
+    assert figure_swap(old, "a quote that is not there", "to 0.03%") == ""
+    assert figure_swap("Pay within thirty days.", "within thirty days", "make it 15 days") == ""      # no digits-and-words pair to replace
 
 
 # ---------------------------------------------------------------- applying

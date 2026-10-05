@@ -39,20 +39,81 @@ def test_a_valid_rewrite_comes_with_the_sentence_it_replaces():
     assert d.new_text == new_ld() and d.old_text == old_ld() and d.rewrite_problem == ""
 
 
-def test_a_rewrite_that_fails_the_checks_keeps_the_request_but_not_the_wording():
-    result = run([modify(new_ld("0.03 (zero point zero five)"))])
-    d = result.deviations[0]
-    assert d.new_text == "" and "do not agree" in d.rewrite_problem and d.old_text == old_ld()
-    assert "figure that you did not give" in run([modify(new_ld("0.04 (zero point zero four)"))]).deviations[0].rewrite_problem
-    assert "much more" in run([modify("The Owner may claim 0.03 (zero point zero three) percent per day.")]).deviations[0].rewrite_problem
+SHORT_QUOTE = "at the rate of 0.05 (zero point zero five) percent of the Contract Price per day"
+LONG_QUOTE = ("the Owner has the right to claim liquidated damages from the Contractor at the rate of 0.05 (zero point zero five) percent of "
+              "the Contract Price per day but not more than 5 (five) percent of the Contract Price.")
 
 
-def test_a_missing_rewrite_is_a_problem_not_a_crash():
+def test_the_reported_case_the_ai_gives_back_only_the_quoted_words():
+    fragment = LONG_QUOTE.replace("0.05 (zero point zero five)", "0.03 (zero point zero three)")
+    raw = dev("completion_deadline", LONG_QUOTE, change="reduce the liquidated damages rate to 0.03%", evidence=REQUEST, new_text=fragment)
+    d = validate(empty(deviations=[raw]), lib(), REQUEST).deviations[0]
+    assert d.new_text == new_ld() and d.written_by == "fragment" and d.rewrite_problem == ""
+
+
+def test_a_rewrite_with_a_wrong_figure_or_words_is_replaced_by_the_figure_the_user_gave():
+    for wrong in (new_ld("0.03 (zero point zero five)"), new_ld("0.04 (zero point zero four)"), ""):
+        d = run([modify(wrong)]).deviations[0]
+        assert d.new_text == new_ld() and d.written_by == "figure" and d.rewrite_problem == "", wrong
+
+
+def test_an_unchanged_sentence_is_also_repaired_by_the_figure():
+    d = run([modify(old_ld())]).deviations[0]
+    assert d.new_text == new_ld() and d.written_by == "figure"
+
+
+def test_a_rewrite_that_cannot_be_repaired_is_still_offered_with_the_problem_as_advice():
+    text = "The Owner may claim 0.03 (zero point zero three) percent per day."
+    long_quote = dev("completion_deadline", LONG_QUOTE, change="Reduce the rate to 0.03% per day", evidence=REQUEST, new_text=text)
+    d = validate(empty(deviations=[long_quote]), lib(), REQUEST).deviations[0]             # two figures in the quote: the system will not guess
+    assert d.new_text == text and "much more" in d.rewrite_problem and d.written_by == "" and d.old_text
+    no_figure = dev("completion_deadline", SHORT_QUOTE, change="Reduce the delay damages", evidence="reduce the delay damages",
+                    new_text="The Owner may claim a small amount.")
+    d = validate(empty(deviations=[no_figure]), lib(), "reduce the delay damages").deviations[0]
+    assert d.new_text == "The Owner may claim a small amount." and d.rewrite_problem
+
+
+def test_an_invented_figure_is_offered_with_the_problem_when_the_system_cannot_replace_it():
+    invented = old_ld().replace("0.05 (zero point zero five)", "0.04 (zero point zero four)")
+    d = validate(empty(deviations=[dev("completion_deadline", SHORT_QUOTE, change="reduce the delay damages", evidence="reduce the delay damages",
+                                       new_text=invented)]), lib(), "reduce the delay damages").deviations[0]
+    assert d.new_text == invented and "figure that you did not give" in d.rewrite_problem
+
+
+def test_no_wording_at_all_leaves_an_empty_new_text_for_the_user_to_write():
+    for raw in (dev("completion_deadline", SHORT_QUOTE, change="reduce the delay damages", evidence="reduce the delay damages", new_text=""),
+                dev("completion_deadline", SHORT_QUOTE, change="reduce the delay damages", evidence="reduce the delay damages", new_text=old_ld())):
+        d = validate(empty(deviations=[raw]), lib(), "reduce the delay damages").deviations[0]
+        assert d.new_text == "" and d.rewrite_problem and d.old_text == old_ld()
+
+
+def test_the_ais_own_good_sentence_is_used_as_it_is():
+    assert run([modify(new_ld())]).deviations[0].written_by == ""
+
+
+def test_the_system_never_replaces_an_ai_sentence_that_passed():
+    good = new_ld().replace("per day", "each day")                                          # a legitimate extra edit inside the quote
+    d = run([modify(good)]).deviations[0]
+    assert d.new_text == good and d.written_by == ""
+
+
+def test_a_missing_rewrite_is_repaired_when_the_figure_is_clear_and_a_problem_when_not():
     raw = modify(new_ld())
-    del raw["new_text"]                                          # an answer from before the rewrite existed
+    del raw["new_text"]
     d = run([raw]).deviations[0]
-    assert d.new_text == "" and d.rewrite_problem == "The AI did not write the new wording."
-    assert run([modify("")]).deviations[0].rewrite_problem == "The AI did not write the new wording."
+    assert d.new_text == new_ld() and d.written_by == "figure"
+    assert run([modify("")]).deviations[0].new_text == new_ld()
+
+
+def test_a_remove_part_is_not_rewritten_by_the_figure_repair():
+    d = dev("completion_deadline", SHORT_QUOTE, change_type="remove_part", change="remove the rate of 0.05", evidence="remove 0.05", new_text="")
+    got = validate(empty(deviations=[d]), lib(), "remove the rate of 0.05").deviations[0]
+    assert got.new_text == "" and got.written_by == ""
+
+
+def test_the_prompt_asks_for_short_quotes_and_whole_sentences():
+    assert "Keep it short" in SYSTEM_PROMPT and "never a whole sentence" in SYSTEM_PROMPT
+    assert "from its first word to its last word, not only the words of provision_quote" in SYSTEM_PROMPT
 
 
 def test_a_clause_that_already_says_it_is_not_proposed_again():
@@ -64,9 +125,11 @@ def test_a_clause_that_already_says_it_is_not_proposed_again():
     assert result.deviations == [] and any("already has that wording" in n for n in result.notes)
 
 
-def test_a_sentence_given_back_unchanged_without_the_figure_is_a_problem():
-    d = run([modify(old_ld())]).deviations[0]
-    assert d.rewrite_problem == "The AI gave back the sentence unchanged." and d.new_text == ""
+def test_a_sentence_given_back_unchanged_is_a_problem_when_there_is_no_figure_to_write():
+    raw = dev("completion_deadline", SHORT_QUOTE if "SHORT_QUOTE" in globals() else QUOTE, change="Reduce the delay damages", evidence="reduce the delay damages",
+              new_text=old_ld())
+    d = validate(empty(deviations=[raw]), lib(), "reduce the delay damages").deviations[0]
+    assert d.rewrite_problem == "The AI gave back the sentence unchanged." and d.new_text == "" and d.written_by == ""
 
 
 def test_a_quote_that_spans_two_sentences_keeps_the_request_but_cannot_be_rewritten():

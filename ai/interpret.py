@@ -40,8 +40,10 @@ class Deviation:
     evidence_verified: bool = True
     old_text: str = ""              # the whole sentence the change is made on (empty for "add")
     new_text: str = ""              # that sentence after the change, or the sentence to add; empty when it could not be checked
-    rewrite_problem: str = ""       # why there is no new_text: a sentence for the user
+    rewrite_problem: str = ""       # what the checks found wrong with new_text (or why there is none): advice for the user, not a bar
     carried: bool = False           # an earlier reply proposed it and it has not been applied or rejected yet
+    written_by: str = ""            # "" the AI's sentence as given; "fragment" the AI's rewrite of the quoted words, put back in
+                                    # the sentence; "figure" the figure and its words written by the system
 
 
 @dataclass
@@ -103,7 +105,8 @@ governing law). Words like reduce, increase, change, shorten, extend mean modify
    - "remove_part": delete only part of a clause that already exists.
    - "add": the user explicitly asks to insert new wording that the clause does not contain.
    For "modify" and "remove_part", "provision_quote" must be copied verbatim from the clause text in \
-the library, and the provision must really be there. Read the full clause text before choosing a \
+the library, and the provision must really be there. Keep it short: only the words that change and a few words \
+around them (for example "at the rate of 0.05 (zero point zero five) percent"), never a whole sentence. Read the full clause text before choosing a \
 clause. If the provision is in no clause (for example the user mentions an interest rate and no clause \
 has one, even if a related clause such as liquidated damages exists), do not create a deviation; list \
 it under unmapped_requests and offer the related provision as its candidate. For "add", provision_quote \
@@ -143,8 +146,8 @@ user sees one stable list instead of rephrased copies.
 
 For every deviation also fill "new_text", the wording the contract will have after the change:
    - "modify" and "remove_part": new_text is the WHOLE existing sentence that contains provision_quote (a numbered \
-sentence, a lettered point, a paragraph or a table cell of that clause), copied exactly, with only the requested \
-change made. Keep every other word, the same style and the same defined terms. Where the clause writes a figure as \
+sentence, a lettered point, a paragraph or a table cell of that clause), copied exactly from its first word to its \
+last word, not only the words of provision_quote, with only the requested change made. Keep every other word, the same style and the same defined terms. Where the clause writes a figure as \
 digits followed by the same figure in words in brackets, for example "5 (five) percent" or "7 (seven) days", write \
 the new figure the same way, with the words matching the digits. Use only figures the user gave.
    - "add": new_text is the new sentence to add at the end of the clause, in the clause's own style, using only the \
@@ -383,13 +386,32 @@ def _attach_rewrite(deviation, clause, raw):
         if new and new.lower() == deviation.old_text.lower():
             if numbers_in(request_text) and numbers_in(request_text) <= numbers_in(deviation.old_text):
                 return True                                    # the sentence already has the figures asked for
-            deviation.rewrite_problem = "The AI gave back the sentence unchanged."
+            if not _repair(deviation, "", request_text):
+                deviation.rewrite_problem = "The AI gave back the sentence unchanged."      # no new wording: the user writes it
             return False
         reason = wording.check_rewrite(deviation.old_text, new, deviation.change_type, deviation.provision_quote, request_text)
+        if reason and _repair(deviation, new, request_text):
+            reason = ""
     if reason:
         deviation.rewrite_problem = reason
-    else:
+        deviation.new_text = new                           # still offered, editable: the user decides, with the problem in view
+    elif not deviation.written_by:
         deviation.new_text = new
+    return False
+
+
+def _repair(deviation, new, request_text):
+    """The AI's sentence did not pass. Two repairs, which the same checks must still accept: its rewrite of only the quoted words
+    put back into the sentence, and (for a figure) the new figure written by the system. True when one worked."""
+    attempts = []
+    if new:
+        attempts.append(("fragment", wording.splice_fragment(deviation.old_text, deviation.provision_quote, new)))
+    if deviation.change_type == "modify":
+        attempts.append(("figure", wording.figure_swap(deviation.old_text, deviation.provision_quote, request_text)))
+    for how, text in attempts:
+        if text and not wording.check_rewrite(deviation.old_text, text, deviation.change_type, deviation.provision_quote, request_text):
+            deviation.new_text, deviation.written_by = text, how
+            return True
     return False
 
 

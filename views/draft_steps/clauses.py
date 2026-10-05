@@ -47,6 +47,38 @@ def deviation_key(d):
     return widget_key("dev", d.clause_key, d.change_type, d.provision_quote, d.summary)
 
 
+def newtext_key(d):
+    return widget_key("newtext", deviation_key(d))
+
+
+def applicable(d):
+    """A wording change can be written when there is a sentence to change (or, for an addition, a clause to add to)."""
+    return d.change_type == "add" or bool(d.old_text)
+
+
+def default_text(d):
+    """What the New wording box starts with: the AI's sentence, else the current sentence for the user to change."""
+    return d.new_text or (d.old_text if d.change_type != "add" else "")
+
+
+def current_text(d):
+    """The new wording as it stands in the box (the user may have changed it)."""
+    return wording.norm(st.session_state.get(newtext_key(d), default_text(d)))
+
+
+def checked_problem(d, text):
+    """What the checks find wrong with `text` as the new wording; "" when nothing. Advice only: it never blocks."""
+    if not text:
+        return "There is no new wording yet."
+    old = d.old_text if d.change_type != "add" else ""
+    return wording.check_rewrite(old, text, d.change_type, d.provision_quote, f"{d.requested_change} {d.evidence}")
+
+
+def default_tick(d):
+    """Apply is ticked at the start only when there is wording and the checks have nothing to say."""
+    return d.evidence_verified and applicable(d) and bool(d.new_text) and not d.rewrite_problem
+
+
 def show_lines(lines):
     for line in lines:
         st.write(plain(line))
@@ -230,29 +262,36 @@ def apply_proposals(msg):
             verb = "Removed" if a.action == "exclude" else "Added"
             applied.append(f"{verb} clause: {titles[a.clause_key]}")
     deviations = [d for d in result.deviations if deviation_key(d) not in rejected]
-    chosen = [d for d in deviations if d.new_text and st.session_state.get(deviation_key(d), d.evidence_verified)]
-    st.session_state[DEVIATIONS_KEY] = chosen
+    chosen = []
     for d in deviations:
+        if not st.session_state.get(deviation_key(d), default_tick(d)):
+            continue
         title = titles.get(d.clause_key, d.clause_key)
-        if not d.new_text:
-            applied.append(f"Not applied: {title}: {d.summary} ({d.rewrite_problem})")
-        elif d in chosen and write_wording_change(d):
+        text = current_text(d)
+        if not applicable(d):
+            applied.append(f"Not applied: {title}: {d.summary} (I could not tell which sentence it changes)")
+        elif not text or (d.change_type != "add" and text.lower() == wording.norm(d.old_text).lower()):
+            applied.append(f"Not applied: {title}: {d.summary} (the wording was not changed)")
+        elif write_wording_change(d, text):
+            chosen.append(d)
             applied.append(f"Wording changed in {title}: {d.summary}")
-        elif d in chosen:
+        else:
             applied.append(f"Not applied: {title}: {d.summary} (that sentence is no longer in the clause)")
+    st.session_state[DEVIATIONS_KEY] = chosen
     msg["applied"] = applied
 
 
-def write_wording_change(d):
+def write_wording_change(d, text):
     """Writes one accepted wording change into the draft: a template clause through the recorded changes, a clause the user
-    had drafted through its own saved wording. False when the sentence is not there any more."""
+    had drafted through its own saved wording. `text` is the new wording as the user left it. False when the sentence is not
+    there any more."""
     if d.clause_key.startswith("drafted_"):
         entry_id = int(d.clause_key.split("_", 1)[1])
         drafted = st.session_state.get(DRAFTS_KEY, {}).get(entry_id)
-        return drafted is not None and drafts.reword(entry_id, drafted, d.change_type, d.old_text, d.new_text)
-    wording_state.add_edit({"id": widget_key("edit", d.clause_key, d.change_type, d.old_text, d.new_text),
+        return drafted is not None and drafts.reword(entry_id, drafted, d.change_type, d.old_text, text)
+    wording_state.add_edit({"id": widget_key("edit", d.clause_key, d.change_type, d.old_text, text),
                             "clause_key": d.clause_key, "change_type": d.change_type, "old": d.old_text,
-                            "new": d.new_text, "summary": d.summary})
+                            "new": text, "summary": d.summary})
     return True
 
 
@@ -331,25 +370,37 @@ def render_results(msg, clauses, turn, stale, all_clauses=None):
                 if d.carried:
                     st.caption("Kept from your earlier message: not applied or rejected yet.")
                 st.write(f"Wording change: {plain(d.requested_change)}")
-                if d.new_text and d.change_type == "add":
-                    st.caption("A new sentence at the end of this clause:")
-                    st.markdown(f"**{plain(d.new_text)}**")
-                elif d.new_text:
-                    before, after = wording.diff_markup(d.old_text, d.new_text)
-                    st.caption("Current wording (struck through: taken out)")
-                    st.markdown(before)
-                    st.caption("New wording (bold: put in)")
-                    st.markdown(after)
+                if not applicable(d):
+                    st.warning("I could not tell which single sentence this change applies to, so it cannot be written into the "
+                               "text. You can change the Word file after downloading.")
+                    st.caption(f"Current wording: \u201c{plain(d.provision_quote)}\u201d")
                 else:
-                    st.warning(f"I could not write this change into the text: {d.rewrite_problem} It will not be applied. "
-                               "Rephrase the request, or change the Word file after downloading.")
-                    if d.change_type != "add":
-                        st.caption(f"Current wording: \u201c{plain(d.provision_quote)}\u201d")
+                    text = current_text(d)
+                    if d.change_type == "add":
+                        st.caption("A new sentence at the end of this clause:")
+                        st.markdown(f"**{plain(text)}**" if text else "_(nothing yet)_")
+                    else:
+                        before, after = wording.diff_markup(d.old_text, text)
+                        st.caption("Current wording (struck through: taken out)")
+                        st.markdown(before)
+                        st.caption("New wording (bold: put in)")
+                        st.markdown(after)
+                    if d.written_by == "figure":
+                        st.caption("The AI's wording could not be used, so the new figure was written into the sentence directly, "
+                                   "with its words made from the number.")
+                    elif d.written_by == "fragment":
+                        st.caption("The AI rewrote only part of the sentence; the rest of it is kept exactly as it was.")
+                    problem = checked_problem(d, text)
+                    if problem:
+                        st.warning(f"Check before you apply: {problem} You can still apply it, or change the wording below first.")
+                    with st.expander("Edit the new wording", expanded=bool(problem)):
+                        start = default_text(d)
+                        st.text_area("New wording", start, key=newtext_key(d),
+                                     height=min(400, max(110, 30 * (len(start) // 90 + 2))))
                 st.caption(f"You wrote: \u201c{plain(d.evidence)}\u201d")
                 if not d.evidence_verified:
                     st.warning("This quote was not found in your messages. Check it before applying.")
-                st.checkbox("Apply this change", value=d.evidence_verified and bool(d.new_text), key=deviation_key(d),
-                            disabled=not d.new_text)
+                st.checkbox("Apply this change", value=default_tick(d), key=deviation_key(d), disabled=not applicable(d))
                 st.button("Reject", on_click=reject_proposal, args=(msg, deviation_key(d), label),
                           key=widget_key("reject", deviation_key(d)))
 

@@ -9,7 +9,7 @@ import difflib
 import re
 from decimal import Decimal, InvalidOperation
 
-from core.clause_params import int_words, number_words
+from core.clause_params import format_number, int_words, number_words
 from core.clauses import Item
 from core.figures import numbers_in
 
@@ -19,6 +19,7 @@ MARGIN_WORDS = 2           # words around the quoted text that a rewrite may als
 MAX_LENGTH = 700           # characters in a new sentence
 
 _FIGURE_WITH_WORDS = re.compile(r"(\d+(?:\.\d+)?)\s*%?\s*\(([A-Za-z][A-Za-z \-]*)\)")
+_PAIR = re.compile(r"(\d+(?:\.\d+)?)(\s*%?\s*)\(([A-Za-z][A-Za-z \-]*)\)")        # "0.05 (zero point zero five)", "5% (five percent)"
 
 
 def norm(text):
@@ -143,6 +144,63 @@ def check_rewrite(old, new, change_type, quote, request_text):
     if change_type == "remove_part" and norm(quote).lower() in new_n.lower():
         return "The part to remove is still in the new wording."
     return ""
+
+
+# ---------------------------------------------------------------------------------------- repairing a proposal
+def _quote_span(old, quote):
+    at = norm(old).lower().find(norm(quote).lower())
+    return (at, at + len(norm(quote))) if norm(quote) and at >= 0 else None
+
+
+def splice_fragment(old, quote, new):
+    """When the AI gave back only the quoted words, rewritten, instead of the whole sentence: the sentence with the quoted words
+    replaced by `new`. "" when `new` is not such a fragment (it already holds the rest of the sentence, or is not a light edit
+    of the quote). The result still has to pass check_rewrite."""
+    span = _quote_span(old, quote)
+    if span is None:
+        return ""
+    old_n, new_n, quote_n = norm(old), norm(new), norm(quote)
+    prefix, suffix = old_n[:span[0]], old_n[span[1]:]
+    new_l = new_n.lower()
+    before = [w for w in prefix.split() if any(ch.isalnum() for ch in w)]        # a lone full stop is not the rest of the sentence
+    after = [w for w in suffix.split() if any(ch.isalnum() for ch in w)]
+    if (before and " ".join(before[:3]).lower() in new_l) or (after and " ".join(after[-3:]).lower() in new_l):
+        return ""                                                    # it holds the rest of the sentence: not a fragment
+    quote_w, new_w = [w.lower().strip(".,;:") for w in quote_n.split()], [w.lower().strip(".,;:") for w in new_n.split()]
+    if not new_w or difflib.SequenceMatcher(None, quote_w, new_w, autojunk=False).ratio() < 0.5:     # a figure and its words change two of five
+        return ""
+    if suffix[:1] in ".,;:" and new_n[-1:] == suffix[:1]:
+        suffix = suffix[1:]
+    return norm(prefix + new_n + suffix)
+
+
+def figure_swap(old, quote, request_text):
+    """The sentence with the one figure in the quoted words replaced by the one new figure the user gave, written the way the
+    contract writes it: digits, then the same figure in words ("0.03 (zero point zero three)"). The words come from the number,
+    so they cannot disagree with it. "" unless the quote holds exactly one such figure and the request brings exactly one new one."""
+    span = _quote_span(old, quote)
+    if span is None:
+        return ""
+    old_n = norm(old)
+    pairs = [m for m in _PAIR.finditer(old_n) if m.start() >= span[0] and m.end() <= span[1]]
+    new_figures = numbers_in(request_text) - numbers_in(old_n)
+    if len(pairs) != 1 or len(new_figures) != 1:
+        return ""
+    value = next(iter(new_figures))
+    digits = format_number(value)
+    try:
+        if value == int(value) and 0 < value < 1000:
+            words = int_words(int(value))
+        else:
+            words = number_words(value)
+    except ValueError:
+        return ""
+    if value <= 0 or len(digits.partition(".")[2]) > 2:
+        return ""
+    m = pairs[0]
+    old_words = m.group(3)
+    suffix = " percent" if old_words.lower().endswith(" percent") else ""
+    return norm(old_n[:m.start()] + f"{digits}{m.group(2)}({words}{suffix})" + old_n[m.end():])
 
 
 # ---------------------------------------------------------------------------------------- applying changes
