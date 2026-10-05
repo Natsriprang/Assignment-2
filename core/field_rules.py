@@ -24,6 +24,14 @@ def template_notes():
     return dict(parse_xlsx_report(TEMPLATE)[1].notes)
 
 
+_NAME_SPLIT = re.compile(r"[\n;,&]|\s+and\s+", re.IGNORECASE)
+
+
+def split_names(value):
+    """The names in a signatory field: one per line, or separated by ; , & or "and"."""
+    return [n.strip() for n in _NAME_SPLIT.split(value or "") if n.strip()]
+
+
 def _filled(ts, name):
     return str(getattr(ts, name, "") or "").strip()
 
@@ -46,13 +54,17 @@ def rule_warnings(ts, notes):
                 out.append(f"{title(name)} \u201c{value}\u201d has {len(compact)} digits, but the term sheet's note says \u201c{note}\u201d.")
             continue
         if _FULL_NAME.search(note):
-            names = [n.strip() for n in re.split(r"[\n;,&]|\s+and\s+", value) if n.strip()]
+            names = split_names(value)
             single = [n for n in names if len(n.split()) < 2]
             if single:
                 one_line = " / ".join(line.strip() for line in value.split("\n") if line.strip())
                 shown = ", ".join(f"\u201c{n}\u201d" for n in single)
-                out.append(f"{title(name)} \u201c{one_line}\u201d has {shown}, which looks like a first name only, "
-                           f"but the term sheet's note says \u201c{note}\u201d.")
+                if single == names and len(names) == 1:
+                    what = f"{title(name)} \u201c{one_line}\u201d looks like a first name only"
+                else:
+                    what = (f"{title(name)} \u201c{one_line}\u201d: {shown} "
+                            f"{'looks like a first name only' if len(single) == 1 else 'look like first names only'}")
+                out.append(f"{what}, but the term sheet's note says \u201c{note}\u201d.")
             continue
         m = _LAST_DIGITS.search(note)
         if m and name == "contract_date" and int(m.group(1)) == 6:

@@ -197,6 +197,21 @@ def fill_template(library, term_sheet):
                 table["rows"].append([v or BLANK for v in cells(inst)] + [_lines(inst, "condition") or BLANK])
         price_clause.table_rows = [tuple(row) for row in price_clause.tables[0]["rows"]]
 
+    notice = by_key.get("notice")
+    if notice and notice.tables:
+        parties = {"Owner": ("owner_name", "owner_contact_name", "owner_contact_position", "owner_contact_location",
+                             "owner_contact_phone", "owner_contact_email"),
+                   "Contractor": ("contractor_name", "contractor_contact_name", "contractor_contact_position",
+                                  "contractor_contact_location", "contractor_contact_phone", "contractor_contact_email")}
+        party = None
+        for row in notice.tables[0]["rows"]:
+            party = row[0] or party
+            company, name, position, address, phone, email = (_text(ts, f) for f in parties.get(party, ("",) * 6))
+            value = {"Company name": company, "Attention": ", ".join(x for x in (name, position) if x),
+                     "Address": address, "Phone": phone, "Email": email}.get(row[1], "")
+            if value and row[2] == BLANK:
+                row[2] = value
+
     deadline = _item(by_key.get("completion_deadline"), 0)
     if deadline:
         deadline.text = deadline_sentence(deadline.text, ts)

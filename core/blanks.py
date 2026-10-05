@@ -20,8 +20,9 @@ def _contexts(text, where):
     return found
 
 
-def find_blanks(header_lines, rendered):
-    """`header_lines` are (style, text) lines of the contract header; `rendered` is renumber_and_render's output."""
+def find_blanks(header_lines, rendered, signature=None):
+    """`header_lines` are (style, text) lines of the contract header; `rendered` is renumber_and_render's output;
+    `signature` is the signature block, if the draft has one."""
     blanks = []
     for _, text in header_lines:
         blanks += _contexts(text, "Contract header")
@@ -35,4 +36,8 @@ def find_blanks(header_lines, rendered):
             for r, row in enumerate(table["rows"], start=1):
                 if any(BLANK in cell for cell in row):
                     blanks.append(Blank(f"{where} (table, row {r})", " | ".join(cell for cell in row)))
+    if signature:
+        from core.signatures import signature_texts
+        for text in signature_texts(signature):
+            blanks += _contexts(text, "Signature block")
     return blanks

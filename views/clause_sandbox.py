@@ -15,6 +15,7 @@ from core.draft_state import library_for
 from core.blanks import find_blanks
 from core.fill import fill_warnings
 from core.header import build_header
+from core.signatures import build_signature_block
 from core.vat import vat_warning
 from core.render import render_docx
 from core.renumber import renumber_and_render
@@ -57,11 +58,21 @@ def show_vat_notice():
         st.error("\u2757 " + vat_warning(ts))
 
 
-def show_blanks(header_lines, rendered, ts):
+def show_signature_block(block):
+    """The closing sentence and one column per party, each line on its own line."""
+    with st.container(border=True):
+        st.markdown("**Signature block**")
+        st.write(plain(block["closing"]))
+        for column, party in zip(st.columns(len(block["parties"])), block["parties"]):
+            with column:
+                st.markdown("  \n".join(plain(line) if line else "\u00a0" for line in party["lines"]))
+
+
+def show_blanks(header_lines, rendered, ts, signature=None):
     """What is still blank in the draft and what the term sheet holds that the text could not show."""
     for w in fill_warnings(ts):
         st.warning(plain(w))
-    blanks = find_blanks(header_lines, rendered)
+    blanks = find_blanks(header_lines, rendered, signature)
     if not blanks:
         st.success("No blanks left in the draft.")
         return
@@ -126,8 +137,9 @@ def render_preview(state_key, noun="draft", download=True, header=False):
     library = library_for(ensure_state(state_key), current_limits(), drafts.drafted_for_library(), current_term_sheet())
     header_lines = build_header(st.session_state.get("term_sheet"))
     rendered = renumber_and_render(library)
+    signature = build_signature_block(st.session_state.get("term_sheet")) if header else None
     if header:
-        show_blanks(header_lines, rendered, current_term_sheet())
+        show_blanks(header_lines, rendered, current_term_sheet(), signature)
         with st.container(border=True):
             for style, text in header_lines:
                 if style == "title":
@@ -152,8 +164,11 @@ def render_preview(state_key, noun="draft", download=True, header=False):
     number, clause, items = next((n, c, i) for n, c, i in rendered if c.title == selected_title)
     with st.container(border=True):
         st.markdown(f"**{number}. {clause.title}**")
-        for p in clause.plain_paragraphs:
+        for n, p in enumerate(clause.plain_paragraphs):
             st.write(plain(p))
+            if n == 0 and not items:                       # a clause without numbered items: its table follows its first paragraph
+                for table_data in clause.tables:
+                    show_table(table_data)
         for i, line in enumerate(items):
             if line.startswith("    "):
                 st.caption(plain(line.strip()))
@@ -162,15 +177,18 @@ def render_preview(state_key, noun="draft", download=True, header=False):
             if i == 0:
                 for table_data in clause.tables:
                     show_table(table_data)
-        if not items:
+        if not items and not clause.plain_paragraphs:
             for table_data in clause.tables:
                 show_table(table_data)
+
+    if signature:
+        show_signature_block(signature)
 
     if not download:
         return
     st.divider()
     buf = io.BytesIO()
-    render_docx(library, buf, header=header_lines)
+    render_docx(library, buf, header=header_lines, signature=signature)
     buf.seek(0)
     st.download_button(
         f"Download {noun} as Word file",

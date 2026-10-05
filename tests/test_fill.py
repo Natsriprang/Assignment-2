@@ -22,7 +22,11 @@ def full(**over):
                    contractor_name="Sun Build Co., Ltd.", contractor_reg_no="C-2", contractor_address="2 Builder Road, Bangkok",
                    contract_price_number="10000000", contract_price_words="ten million baht", vat_treatment="exclusive",
                    attachment_no="3", deadline_mode="period", completion_days="120",
-                   signing_place_choice="owner")
+                   signing_place_choice="owner", owner_signatory="Nat Sriprang", contractor_signatory="Noom Sriprang",
+                   owner_contact_name="John Smith", owner_contact_position="Director", owner_contact_location="1 Owner Road, Bangkok",
+                   owner_contact_phone="02-111-2222", owner_contact_email="john@owner.example",
+                   contractor_contact_name="Jan Lee", contractor_contact_position="Engineer", contractor_contact_location="2 Builder Road, Bangkok",
+                   contractor_contact_phone="03-333-4444", contractor_contact_email="jan@builder.example")
     ts.installments = [Installment(str(i + 1), p) for i, p in enumerate(["10", "30", "30", "20", "10"])]
     for k, v in over.items():
         setattr(ts, k, v)
@@ -213,6 +217,8 @@ def test_only_the_intended_clauses_change():
     before = {c.key: ([*c.plain_paragraphs], [i.text for i in c.items]) for c in library_for({})}
     after = {c.key: ([*c.plain_paragraphs], [i.text for i in c.items]) for c in library_for({}, None, None, full())}
     assert sorted(k for k in before if before[k] != after[k]) == ["attachments", "completion_deadline", "construction_terms", "price_payment"]
+    tables = lambda lib: {c.key: [r[:] for t in c.tables for r in t["rows"]] for c in lib}
+    assert sorted(k for k, v in tables(library_for({}, None, None, full())).items() if v != tables(library_for({})).get(k)) == ["notice", "price_payment"]
 
 
 def test_the_vat_wording_is_still_resolved():

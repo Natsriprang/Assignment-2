@@ -319,6 +319,15 @@ def build_library():
         ], category="force_majeure"),
 
         Clause("notice", "Notice",
+               tables=[{
+                   "headers": ["Party", "Item", "Details"],
+                   "rows": [
+                       ["Owner", "Company name", "[*]"], ["", "Attention", "[*]"], ["", "Address", "[*]"],
+                       ["", "Phone", "[*]"], ["", "Email", "[*]"],
+                       ["Contractor", "Company name", "[*]"], ["", "Attention", "[*]"], ["", "Address", "[*]"],
+                       ["", "Phone", "[*]"], ["", "Email", "[*]"],
+                   ],
+               }],
                plain_paragraphs=[
                    "For the purpose of the performance of this Agreement being effective and "
                    "correct, the Parties have designated the addressee and address for "

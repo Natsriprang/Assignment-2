@@ -19,8 +19,21 @@ def _add_table(doc, table_data):
     doc.add_paragraph()
 
 
-def render_docx(clauses, out_path, header=None):
-    """`header` is a list of (style, text) lines from core.header.build_header; without it only the title is written."""
+def _add_signature_block(doc, block):
+    """The closing sentence, then one borderless two-column table: a column per party, a paragraph per line."""
+    doc.add_paragraph()
+    doc.add_paragraph(block["closing"])
+    table = doc.add_table(rows=1, cols=len(block["parties"]))
+    for cell, party in zip(table.rows[0].cells, block["parties"]):
+        for n, line in enumerate(party["lines"]):
+            p = cell.paragraphs[0] if n == 0 else cell.add_paragraph()
+            run = p.add_run(line)
+            run.bold = n == 0                                  # the role is the heading of the column
+
+
+def render_docx(clauses, out_path, header=None, signature=None):
+    """`header` is a list of (style, text) lines from core.header.build_header; without it only the title is written.
+    `signature` is a block from core.signatures.build_signature_block, written after the last clause."""
     rendered = renumber_and_render(clauses)
 
     doc = Document()
@@ -48,8 +61,11 @@ def render_docx(clauses, out_path, header=None):
         r = h.add_run(f"{number}.\t{clause.title}")
         r.bold = True
 
-        for p in clause.plain_paragraphs:
+        for n, p in enumerate(clause.plain_paragraphs):
             doc.add_paragraph(p)
+            if n == 0 and not item_lines:                      # a clause without numbered items: its table follows its first paragraph
+                for table_data in clause.tables:
+                    _add_table(doc, table_data)
 
         for i, line in enumerate(item_lines):
             p = doc.add_paragraph()
@@ -63,9 +79,12 @@ def render_docx(clauses, out_path, header=None):
                 for table_data in clause.tables:
                     _add_table(doc, table_data)
 
-        if not item_lines:
+        if not item_lines and not clause.plain_paragraphs:
             for table_data in clause.tables:
                 _add_table(doc, table_data)
+
+    if signature:
+        _add_signature_block(doc, signature)
 
     doc.save(out_path)
     return rendered

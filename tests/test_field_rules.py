@@ -53,10 +53,13 @@ def test_full_names_need_at_least_two_words_each():
                "Somchai  Jaidee", " Nat Sriprang "):
         assert rule_warnings(TermSheet(owner_signatory=ok), note) == [], ok
     w = rule_warnings(TermSheet(owner_signatory="Nat"), note)
-    assert w == ["Owner \u2013 Authorised signatory \u201cNat\u201d has \u201cNat\u201d, which looks like a first name only, but the term sheet's note says "
+    assert w == ["Owner \u2013 Authorised signatory \u201cNat\u201d looks like a first name only, but the term sheet's note says "
                  "\u201cFull name(s), matching the company's signing authority\u201d."]
     w = rule_warnings(TermSheet(owner_signatory="Nat Sriprang\nSomchai"), note)
-    assert len(w) == 1 and "\u201cSomchai\u201d, which looks like a first name only" in w[0] and "\u201cNat Sriprang / Somchai\u201d" in w[0]
+    assert w == ["Owner \u2013 Authorised signatory \u201cNat Sriprang / Somchai\u201d: \u201cSomchai\u201d looks like a first name only, but the term sheet's "
+                 "note says \u201cFull name(s), matching the company's signing authority\u201d."]
+    w = rule_warnings(TermSheet(owner_signatory="Nat\nSomchai"), note)
+    assert len(w) == 1 and "\u201cNat\u201d, \u201cSomchai\u201d look like first names only" in w[0]
     assert rule_warnings(TermSheet(owner_signatory=""), note) == []                       # empty: the blanks check's business
     assert rule_warnings(TermSheet(contractor_signatory="Noom"), {"contractor_signatory": "Full name(s)"})[0].startswith("Contractor \u2013 Authorised signatory")
     assert rule_warnings(TermSheet(owner_signatory="Nat"), {"owner_signatory": "The person who signs"}) == []   # only a note that asks for full names
