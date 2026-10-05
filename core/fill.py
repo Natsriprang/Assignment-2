@@ -39,15 +39,49 @@ def format_amount(value):
     return f"{value.quantize(Decimal('0.01'), ROUND_HALF_UP):,.2f}"
 
 
-def looks_like_date(text):
-    text = (text or "").strip()
+_MONTHS = ("January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
+           "November", "December")
+_UNAMBIGUOUS = ("%d %B %Y", "%d %b %Y", "%B %d, %Y", "%b %d, %Y", "%d %B, %Y", "%Y-%m-%d", "%Y-%m-%d %H:%M:%S", "%Y/%m/%d")
+
+
+def _parse_date(text):
+    text = " ".join((text or "").split())
     for fmt in _DATE_FORMATS:
         try:
-            datetime.strptime(text, fmt)
-            return True
+            return datetime.strptime(text, fmt), fmt
         except ValueError:
             continue
-    return False
+    return None, None
+
+
+def looks_like_date(text):
+    return _parse_date(text)[0] is not None
+
+
+def format_date(text):
+    """'03 October 2026' and '2026-10-03' become '3 October 2026'. A numeric day/month form such as 03/10/2026 could be read
+    either way, so it is kept as typed."""
+    when, fmt = _parse_date(text)
+    if when is None or fmt not in _UNAMBIGUOUS:
+        return " ".join((text or "").split())
+    return f"{when.day} {_MONTHS[when.month - 1]} {when.year}"
+
+
+def fill_deadline(text, values):
+    """The commencement and completion blanks. A period fills "within [*]" as typed; a calendar date turns that
+    "within" into "on or before". Each of the two is decided on its own."""
+    parts = text.split(BLANK)
+    if len(parts) != len(values) + 1:
+        return text
+    out = parts[0]
+    for value, rest in zip(values, parts[1:]):
+        if not value:
+            out += BLANK + rest
+        elif looks_like_date(value):
+            out = (out[:-len("within ")] + "on or before " if out.endswith("within ") else out) + format_date(value) + rest
+        else:
+            out += value + rest
+    return out
 
 
 def fill_slots(text, values):
@@ -111,22 +145,26 @@ def fill_template(library, term_sheet):
 
     if price_clause and price_clause.tables:
         installments = list(getattr(ts, "installments", []) or [])
+
+        def cells(inst):
+            pct = _percent(inst) if inst else None
+            return [(_text(inst, "number") or None) if inst else None,
+                    f"{format_number(pct)}%" if pct is not None else None,
+                    format_amount(price * pct / 100) if price is not None and pct is not None else None]
+
         for table in price_clause.tables:
-            for r, row in enumerate(table["rows"][:TEMPLATE_ROWS]):
-                inst = installments[r] if r < len(installments) else None
-                pct = _percent(inst) if inst else None
-                values = [(_text(inst, "number") or None) if inst else None,
-                          f"{format_number(pct)}%" if pct is not None else None,
-                          format_amount(price * pct / 100) if price is not None and pct is not None else None]
-                for c, value in enumerate(values):
+            del table["rows"][TEMPLATE_ROWS:]                       # so filling twice gives the same table
+            for r, row in enumerate(table["rows"]):                 # the template's rows keep their conditions
+                for c, value in enumerate(cells(installments[r] if r < len(installments) else None)):
                     if value is not None and row[c] == BLANK:
                         row[c] = value
+            for inst in installments[TEMPLATE_ROWS:]:               # more installments than rows: one more row each
+                table["rows"].append([v or BLANK for v in cells(inst)] + [_text(inst, "condition") or BLANK])
         price_clause.table_rows = [tuple(row) for row in price_clause.tables[0]["rows"]]
 
     deadline = _item(by_key.get("completion_deadline"), 0)
     if deadline:
-        periods = [_text(ts, name) for name in ("start_date", "completion_date")]
-        deadline.text = fill_slots(deadline.text, [None if not p or looks_like_date(p) else p for p in periods])
+        deadline.text = fill_deadline(deadline.text, [_text(ts, name) for name in ("start_date", "completion_date")])
     return library
 
 
@@ -136,23 +174,16 @@ def fill_warnings(ts):
         return []
     warnings = []
     installments = [i for i in (getattr(ts, "installments", []) or []) if (i.percent or i.number or i.condition)]
-    if installments and len(installments) != TEMPLATE_ROWS:
-        extra = (f"rows {TEMPLATE_ROWS + 1}-{len(installments)} are not shown" if len(installments) > TEMPLATE_ROWS
-                 else f"rows {len(installments) + 1}-{TEMPLATE_ROWS} are left blank")
+    if 0 < len(installments) < TEMPLATE_ROWS:
         warnings.append(f"The term sheet has {len(installments)} installments but the payment table in the contract has "
-                        f"{TEMPLATE_ROWS} rows: {extra}.")
+                        f"{TEMPLATE_ROWS} rows: rows {len(installments) + 1}-{TEMPLATE_ROWS} are left blank.")
     price = parse_decimal(_text(ts, "contract_price_number"))
-    pcts = [_percent(i) for i in installments[:TEMPLATE_ROWS]]
+    pcts = [_percent(i) for i in installments]
     if price is not None and pcts and all(p is not None for p in pcts):
         total = sum(Decimal(format_amount(price * p / 100).replace(",", "")) for p in pcts)
         if abs(total - price) >= Decimal("0.02") and sum(pcts) == 100:
             warnings.append(f"The installment amounts add up to {format_amount(total)}, not {format_amount(price)}, "
                             "because of rounding.")
-    for label, name in (("Start date", "start_date"), ("Completion date", "completion_date")):
-        value = _text(ts, name)
-        if value and looks_like_date(value):
-            warnings.append(f"{label} \u201c{value}\u201d looks like a calendar date, but the clause reads \u201cwithin \u2026\u201d "
-                            "and needs a period (for example \u201c14 days after signing\u201d). It was left blank.")
     days = _text(ts, "payment_days")
     if days and not (days.isdigit() and 0 < int(days) < 1000):
         warnings.append(f"Payment days \u201c{days}\u201d is not a whole number of days, so it was left blank.")

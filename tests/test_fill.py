@@ -10,7 +10,7 @@ from core.blanks import find_blanks
 from core.clause_data import build_library
 from core.clause_params import int_words
 from core.draft_state import library_for
-from core.fill import fill_slots, fill_template, fill_warnings, looks_like_date, parse_decimal
+from core.fill import fill_deadline, fill_slots, fill_template, fill_warnings, format_date, looks_like_date, parse_decimal
 from core.header import build_header
 from core.renumber import renumber_and_render
 from core.term_sheet_fields import Installment, TermSheet, ensure_fields, signing_place
@@ -98,20 +98,51 @@ def test_fewer_or_more_installments_than_the_table_has_rows():
     ts = full(); ts.installments = ts.installments[:3]
     rows = clause(library_for({}, None, None, ts), "price_payment").tables[0]["rows"]
     assert rows[2][:3] == ["3", "30%", "3,000,000.00"] and rows[3][:3] == ["[*]", "[*]", "[*]"] and rows[4][:3] == ["[*]", "[*]", "[*]"]
-    ts = full(); ts.installments += [Installment("6", "5"), Installment("7", "5")]
-    assert len(clause(library_for({}, None, None, ts), "price_payment").tables[0]["rows"]) == 5
-    assert any("7 installments" in w and "6-7 are not shown" in w for w in fill_warnings(ts))
     assert any("3 installments" in w and "4-5 are left blank" in w for w in fill_warnings(full(installments=full().installments[:3])))
 
 
-def test_commencement_and_completion_periods_are_copied_as_typed():
+def test_every_installment_of_the_term_sheet_gets_a_row():
+    ts = full(contract_price_number="1000000")
+    ts.installments = [Installment(str(i + 1), p) for i, p in enumerate(["10", "20", "20", "15", "15", "10", "10"])]
+    ts.installments[5].condition, ts.installments[6].condition = "Upon final acceptance", ""
+    lib = library_for({}, None, None, ts)
+    price = clause(lib, "price_payment")
+    rows = price.tables[0]["rows"]
+    assert len(rows) == 7 and [r[0] for r in rows] == [str(i) for i in range(1, 8)]
+    assert rows[5] == ["6", "10%", "100,000.00", "Upon final acceptance"] and rows[6] == ["7", "10%", "100,000.00", "[*]"]
+    assert rows[0][3].startswith("Payable upon the Owner's confirmation")                        # the first five keep the template's conditions
+    assert [tuple(r) for r in rows] == price.table_rows
+    assert fill_warnings(ts) == []                                                               # nothing is left out, so nothing to warn about
+    again = fill_template(lib, ts)                                                               # filling twice does not add rows
+    assert len(clause(again, "price_payment").tables[0]["rows"]) == 7
+    left = find_blanks(build_header(ts), renumber_and_render(lib))
+    assert [b.where.endswith("table, row 7)") for b in left if "table" in b.where] == [True]     # only the missing condition is blank
+
+
+def test_the_percentages_and_amounts_check_covers_every_installment():
+    ts = full(contract_price_number="1000")
+    ts.installments = [Installment(str(i + 1), "14.3") for i in range(7)] + []
+    assert not any("round" in w for w in fill_warnings(ts))                                       # 100.1 %, not 100: that is the percent warning's job
+    ts.installments = [Installment(str(i + 1), p) for i, p in enumerate(["33.33", "33.33", "33.34"])]
+    assert not any("round" in w for w in fill_warnings(ts))
+
+
+def test_commencement_and_completion_are_a_period_as_typed_or_a_date():
     first = lambda **o: lines(library_for({}, None, None, full(**o)), "completion_deadline")[0]
     assert ("commence the Works under this Agreement within 14 days after signing and the Contractor agrees to complete the Works "
             "within 150 days from commencement or within 150 days") in first()
-    assert "within [*] and" in first(start_date="1 Nov 2026") and "within 150 days from commencement or" in first(start_date="1 Nov 2026")
-    assert "within [*] or within 150" in first(completion_date="2026-11-01")
+    both = first(start_date="03 October 2026", completion_date="10 October 2026")
+    assert ("commence the Works under this Agreement on or before 3 October 2026 and the Contractor agrees to complete the Works "
+            "on or before 10 October 2026 or within 150 days from the signing date") in both
+    mixed = first(start_date="14 days after signing", completion_date="2026-10-10")
+    assert "within 14 days after signing and" in mixed and "complete the Works on or before 10 October 2026 or within 150" in mixed
+    assert "within [*] and" in first(start_date="") and "on or before 10 October 2026" in first(start_date="", completion_date="10 October 2026")
+    assert "on or before 03/10/2026" in first(start_date="03/10/2026")                         # a numeric form is kept as typed
     assert looks_like_date("1 Nov 2026") and looks_like_date("01/11/2026") and looks_like_date("2026-11-01 00:00:00")
     assert not looks_like_date("14 days after signing") and not looks_like_date("150 days")
+    assert [format_date(x) for x in ("03 October 2026", "Oct 3, 2026", "2026-10-03 00:00:00", "03/10/2026")] == \
+        ["3 October 2026", "3 October 2026", "3 October 2026", "03/10/2026"]
+    assert fill_deadline("no blanks here", ["x", "y"]) == "no blanks here"
 
 
 def test_a_sentence_with_a_different_number_of_blanks_is_left_alone():
@@ -138,7 +169,7 @@ def test_a_complete_term_sheet_has_no_warnings():
 
 def test_warnings_name_what_was_left_blank_and_why():
     w = fill_warnings(full(start_date="1 Nov 2026", payment_days="abc"))
-    assert any("Start date" in x and "calendar date" in x and "left blank" in x for x in w)
+    assert not any("Start date" in x for x in w)                                                 # a date is a normal answer
     assert any("Payment days" in x and "abc" in x for x in w)
     assert any("empty" in x for x in fill_warnings(full(signing_place_choice="contractor", contractor_address="")))
 

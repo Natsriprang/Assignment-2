@@ -19,9 +19,11 @@ inside it.
 
 Report only problems that would put a wrong or unclear fact into the contract:
 - values that contradict each other (the price in digits against the price in words, installment percentages that do \
-not add up, a completion period shorter than the start period, the capacity unit against the project name);
-- values in a form the contract cannot use. The contract reads "commence the Works within <start_date>" and \
-"complete the Works within <completion_date>", so those two fields must be periods and not calendar dates;
+not add up, the capacity unit against the project name);
+- start_date and completion_date may each be a calendar date or a period (for example "14 days after signing"); \
+the contract is worded to suit either, so do not report the form. Report them only if they contradict each other \
+(a completion date before the start date, a completion period that cannot follow the start) or are neither a date \
+nor a period;
 - entries that look misplaced (a company name in the registration number field, a person's name in an address \
 field, a country in the place field).
 
