@@ -71,9 +71,12 @@ def test_nothing_wrong_is_an_empty_list():
 
 
 def test_the_prompt_and_schema():
-    assert "deadline_mode" in CHECK_PROMPT and "completion_days only" in CHECK_PROMPT and "start_days" not in CHECK_PROMPT
-    assert "capacity unit against the project name" not in CHECK_PROMPT and "plausible for the kind of project" in CHECK_PROMPT
-    assert "periods and not calendar dates" not in CHECK_PROMPT and "Do not report missing optional fields" in CHECK_PROMPT
+    low = CHECK_PROMPT.lower()
+    for word in ("thai", "rooftop", "solar", "agreement", "contract ", "draft the", "construction", "deadline_mode", "start_days"):
+        assert word not in low, f"the check prompt must be about the term sheet only, not about {word!r}"
+    assert "wrong kind for its field" in low and "never report" in low and "plausible" in low
+    assert "do not report them" in low and "empty fields" in low                    # prices, percentages, dates, blanks: not the AI's job
+    assert "country in the place field" not in low and "contradict each other" not in low
     enum = check_schema()["properties"]["issues"]["items"]["properties"]["field"]["enum"]
     assert enum == FIELDS and "limits" not in FIELDS and "installments" in FIELDS and "payment_days" in FIELDS
     assert "start_days" not in FIELDS and "owner_contact_email" in FIELDS and "contractor_contact_email" in FIELDS

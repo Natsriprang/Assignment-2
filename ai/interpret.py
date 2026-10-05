@@ -184,18 +184,8 @@ def term_sheet_text(ts):
 
 def term_sheet_warnings(ts):
     """Deterministic checks the model should not be trusted with (arithmetic)."""
-    warnings = []
-    percents = []
-    for inst in ts.installments:
-        if not inst.percent:
-            continue
-        try:
-            percents.append(float(inst.percent.replace("%", "").strip()))
-        except ValueError:
-            warnings.append(f"Installment {inst.number}: '{inst.percent}' is not a number.")
-    if percents and abs(sum(percents) - 100) > 0.01:
-        warnings.append(f"Installment percentages add up to {sum(percents):g}%, not 100%.")
-    return warnings
+    from core.term_checks import percent_warnings
+    return percent_warnings(ts)
 
 
 def build_schema(clause_keys):

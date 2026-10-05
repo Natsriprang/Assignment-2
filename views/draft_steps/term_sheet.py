@@ -7,6 +7,8 @@ import streamlit as st
 from core.capacity import UNITS, parse_capacity
 from core.clause_params import PARAMS
 from core.deadline import deadline_choice, deadline_warning, is_days
+from core.field_titles import title
+from core.term_checks import blank_fields, contradictions
 from core.term_sheet_fields import TermSheet, Installment, ensure_fields, missing_required, signing_place
 from core.vat import vat_choice, vat_warning
 from core.xlsx_parser import FIELD_LABELS, parse_xlsx_report
@@ -41,6 +43,31 @@ def show_import_report():
                    + ", ".join(rep["missing"]) + ".")
     for note in rep["conflicts"]:
         st.warning(note)
+
+
+def try_continue(ts):
+    """The one way out of this step, for the Continue button and for the header's next arrow: the AI check first, then on.
+    If the check has points to show (or could not run) the user stays here, where they are shown, and the next try goes on."""
+    if term_check.run_check(ts) == "ran" and term_check.needs_a_look():
+        term_check.hold(ts)
+        st.rerun()
+    flow.go_next()
+    st.rerun()
+
+
+def advance():
+    try_continue(ensure_fields(st.session_state.term_sheet))
+
+
+def show_checks(ts):
+    """Every warning about the term sheet, on the Term sheet page: blanks, values that contradict each other (both exact,
+    by code), then what the AI check found. Nothing here blocks Continue."""
+    blanks = blank_fields(ts)
+    if blanks:
+        st.warning(term_check.plain("Not filled in: " + ", ".join(blanks) + "."))
+    for text in contradictions(ts):
+        st.warning(term_check.plain(text))
+    term_check.show_result(ts)
 
 
 def render():
@@ -203,10 +230,9 @@ def render():
         ts.contractor_contact_email = st.text_input("Email", ts.contractor_contact_email, key=f"con_cem_{v}")
 
     st.divider()
+    show_checks(ts)
     missing = missing_required(ts)
     if missing:
-        st.warning(f"Required before continuing: {', '.join(missing)}")
+        st.warning(f"Required before continuing: {', '.join(title(f) for f in missing)}")
     if st.button("Continue \u2192", disabled=bool(missing), type="primary", key="term_continue"):
-        term_check.run_check(ts)
-        flow.go_next()
-        st.rerun()
+        try_continue(ts)

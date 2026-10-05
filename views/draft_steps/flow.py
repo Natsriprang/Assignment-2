@@ -15,6 +15,7 @@ class Step:
     title: str
     render: Callable
     ready: Callable = lambda: True   # whether the user may move past this step
+    advance: Callable = None         # how the next arrow leaves this step, if it needs more than moving on (see term_sheet.advance)
 
 
 def current():

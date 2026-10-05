@@ -10,7 +10,7 @@ import streamlit as st
 
 from ai.drafting import draft_clause
 from ai.interpret import (InterpretationError, candidate_question, context_summary, interpret_request,
-                          result_lines, term_sheet_text, term_sheet_warnings)
+                          result_lines, term_sheet_text)
 from ai.llm import MODEL, AIStepError, CountingClient, get_client
 from ai.references import select_references
 from core.clause_data import build_library
@@ -20,7 +20,7 @@ from core.placement import placement_from_references
 from core.reference_library import load_references
 from core.term_sheet_fields import missing_required
 from views import clause_sandbox
-from views.draft_steps import drafts, flow, term_check
+from views.draft_steps import drafts, flow
 
 STATE_KEY = "draft_included"
 DEVIATIONS_KEY = "draft_deviations"
@@ -358,7 +358,6 @@ def render():
         return
 
     clause_sandbox.show_vat_notice()
-    term_check.show_result(ts)
 
     client = get_client(st.session_state.get("openai_api_key"))
 
@@ -371,9 +370,6 @@ def render():
     included = clause_sandbox.ensure_state(STATE_KEY)
     limits = clause_sandbox.current_limits()
     clauses = {c.key: c for c in library_for(included, limits, None, ts)}
-
-    for w in term_sheet_warnings(ts):
-        st.warning(w)
 
     with st.expander("Clauses in the draft", expanded=True):
         clause_sandbox.render_picker(STATE_KEY)

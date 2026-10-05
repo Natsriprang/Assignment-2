@@ -64,6 +64,11 @@ def looks_like_date(text):
     return _parse_date(text)[0] is not None
 
 
+def date_of(text):
+    """The date a text says, or None."""
+    return _parse_date(text)[0]
+
+
 def format_date(text):
     """'03 October 2026' and '2026-10-03' become '3 October 2026'. A numeric day/month form such as 03/10/2026 could be read
     either way, so it is kept as typed."""
