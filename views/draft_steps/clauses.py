@@ -13,6 +13,7 @@ from ai.interpret import (InterpretationError, candidate_question, context_summa
                           result_lines, term_sheet_text)
 from ai.llm import MODEL, AIStepError, CountingClient, get_client
 from ai.references import select_references
+from core import wording
 from core.clause_data import build_library
 from core.draft_state import library_for
 from core.figures import numbers_in
@@ -20,7 +21,7 @@ from core.placement import placement_from_references
 from core.reference_library import load_references
 from core.term_sheet_fields import missing_required
 from views import clause_sandbox
-from views.draft_steps import drafts, flow
+from views.draft_steps import drafts, flow, wording_state
 
 STATE_KEY = "draft_included"
 DEVIATIONS_KEY = "draft_deviations"
@@ -221,17 +222,50 @@ def apply_proposals(msg):
     result = msg["result"]
     rejected = msg.get("rejected") or {}
     titles = {c.key: c.title for c in build_library()}
+    titles.update({d["key"]: d["title"] for d in drafts.drafted_for_library()})
     applied = []
     for a in result.clause_actions:
         if action_key(a) not in rejected and st.session_state.get(action_key(a), a.evidence_verified):
             clause_sandbox.set_clause(STATE_KEY, a.clause_key, a.action == "include")
             verb = "Removed" if a.action == "exclude" else "Added"
             applied.append(f"{verb} clause: {titles[a.clause_key]}")
-    deviations = [d for d in result.deviations
-                  if deviation_key(d) not in rejected and st.session_state.get(deviation_key(d), d.evidence_verified)]
-    st.session_state[DEVIATIONS_KEY] = deviations
-    applied += [f"Wording change noted for {titles[d.clause_key]}: {d.summary}" for d in deviations]
+    deviations = [d for d in result.deviations if deviation_key(d) not in rejected]
+    chosen = [d for d in deviations if d.new_text and st.session_state.get(deviation_key(d), d.evidence_verified)]
+    st.session_state[DEVIATIONS_KEY] = chosen
+    for d in deviations:
+        title = titles.get(d.clause_key, d.clause_key)
+        if not d.new_text:
+            applied.append(f"Not applied: {title}: {d.summary} ({d.rewrite_problem})")
+        elif d in chosen and write_wording_change(d):
+            applied.append(f"Wording changed in {title}: {d.summary}")
+        elif d in chosen:
+            applied.append(f"Not applied: {title}: {d.summary} (that sentence is no longer in the clause)")
     msg["applied"] = applied
+
+
+def write_wording_change(d):
+    """Writes one accepted wording change into the draft: a template clause through the recorded changes, a clause the user
+    had drafted through its own saved wording. False when the sentence is not there any more."""
+    if d.clause_key.startswith("drafted_"):
+        entry_id = int(d.clause_key.split("_", 1)[1])
+        drafted = st.session_state.get(DRAFTS_KEY, {}).get(entry_id)
+        return drafted is not None and drafts.reword(entry_id, drafted, d.change_type, d.old_text, d.new_text)
+    wording_state.add_edit({"id": widget_key("edit", d.clause_key, d.change_type, d.old_text, d.new_text),
+                            "clause_key": d.clause_key, "change_type": d.change_type, "old": d.old_text,
+                            "new": d.new_text, "summary": d.summary})
+    return True
+
+
+def pending_deviations(chat):
+    """The wording changes the latest reply proposed that the user has neither applied nor rejected, so the next analysis
+    keeps them (see ai.interpret.settle)."""
+    for m in reversed(chat):
+        if m["role"] == "assistant" and "result" in m:
+            if m.get("applied") is not None:
+                return []
+            rejected = m.get("rejected") or {}
+            return [d for d in m["result"].deviations if deviation_key(d) not in rejected]
+    return []
 
 
 def clause_preview(clauses, key, removing):
@@ -250,12 +284,13 @@ def clause_preview(clauses, key, removing):
                 show(sub, caption=True)
 
 
-def render_results(msg, clauses, turn, stale):
+def render_results(msg, clauses, turn, stale, all_clauses=None):
     """The results for the latest reply. Every item sits in its own box; the new-clause requests are numbered
-    in the order they were first raised. Returns (quick_reply, draft_request) when a Yes/No or draft button
-    was pressed."""
+    in the order they were first raised. `all_clauses` also has the clauses drafted in this session, which a wording
+    change may name. Returns (quick_reply, draft_request) when a Yes/No or draft button was pressed."""
     result = msg["result"]
-    proposals, questions, _ = result_lines(result, list(clauses.values()))
+    lookup = all_clauses or clauses
+    proposals, questions, _ = result_lines(result, list(lookup.values()))
     rejected = msg.get("rejected") or {}
     requests = new_clause_requests(result, rejected)
     quick_reply, draft_request = None, None
@@ -290,17 +325,31 @@ def render_results(msg, clauses, turn, stale):
 
         for d in open_deviations:
             with st.container(border=True):
-                label = f"Wording change: {clauses[d.clause_key].title}: {d.summary}"
-                st.markdown(f"#### {plain(clauses[d.clause_key].title)}: {plain(d.summary)}")
+                title = lookup[d.clause_key].title
+                label = f"Wording change: {title}: {d.summary}"
+                st.markdown(f"#### {plain(title)}: {plain(d.summary)}")
+                if d.carried:
+                    st.caption("Kept from your earlier message: not applied or rejected yet.")
                 st.write(f"Wording change: {plain(d.requested_change)}")
-                if d.change_type == "add":
-                    st.caption("This adds new wording to the clause.")
+                if d.new_text and d.change_type == "add":
+                    st.caption("A new sentence at the end of this clause:")
+                    st.markdown(f"**{plain(d.new_text)}**")
+                elif d.new_text:
+                    before, after = wording.diff_markup(d.old_text, d.new_text)
+                    st.caption("Current wording (struck through: taken out)")
+                    st.markdown(before)
+                    st.caption("New wording (bold: put in)")
+                    st.markdown(after)
                 else:
-                    st.caption(f"Current wording: \u201c{plain(d.provision_quote)}\u201d")
+                    st.warning(f"I could not write this change into the text: {d.rewrite_problem} It will not be applied. "
+                               "Rephrase the request, or change the Word file after downloading.")
+                    if d.change_type != "add":
+                        st.caption(f"Current wording: \u201c{plain(d.provision_quote)}\u201d")
                 st.caption(f"You wrote: \u201c{plain(d.evidence)}\u201d")
                 if not d.evidence_verified:
                     st.warning("This quote was not found in your messages. Check it before applying.")
-                st.checkbox("Keep this request", value=d.evidence_verified, key=deviation_key(d))
+                st.checkbox("Apply this change", value=d.evidence_verified and bool(d.new_text), key=deviation_key(d),
+                            disabled=not d.new_text)
                 st.button("Reject", on_click=reject_proposal, args=(msg, deviation_key(d), label),
                           key=widget_key("reject", deviation_key(d)))
 
@@ -369,7 +418,13 @@ def render():
     chat = st.session_state.setdefault("chat", [])
     included = clause_sandbox.ensure_state(STATE_KEY)
     limits = clause_sandbox.current_limits()
-    clauses = {c.key: c for c in library_for(included, limits, None, ts)}
+    edits, failed = wording_state.applied(), []
+    clauses = {c.key: c for c in library_for(included, limits, None, ts, edits, failed)}
+    interpret_library = library_for(included, limits, drafts.drafted_for_library(), ts, edits)
+    all_clauses = {c.key: c for c in interpret_library}
+    if failed:
+        st.warning("These wording changes could not be applied now, because the sentence they change is no longer in the clause: "
+                   + "; ".join(plain(e["summary"]) for e in failed))
 
     with st.expander("Clauses in the draft", expanded=True):
         clause_sandbox.render_picker(STATE_KEY)
@@ -402,7 +457,7 @@ def render():
 
     quick_reply, draft_request = None, None
     if latest is not None:
-        quick_reply, draft_request = render_results(latest, clauses, len(chat), stale)
+        quick_reply, draft_request = render_results(latest, clauses, len(chat), stale, all_clauses)
 
     if client is not None and draft_request:
         entry_id, request_text = draft_request
@@ -443,8 +498,9 @@ def render():
                 error = None
                 try:
                     result = interpret_request(
-                        ts, library_for(included, limits, None, ts), CountingClient(client, calls, STEP_NAME), MODEL,
-                        [{"role": m["role"], "content": content_for_model(m)} for m in chat])
+                        ts, interpret_library, CountingClient(client, calls, STEP_NAME), MODEL,
+                        [{"role": m["role"], "content": content_for_model(m)} for m in chat],
+                        pending_deviations(chat[:-1] if text else chat), wording_state.applied())
                 except InterpretationError as e:
                     error = str(e)
                 except Exception as e:
@@ -454,7 +510,7 @@ def render():
                     chat.pop()
                 st.error(f"{error} Your message was not sent; please try again.")
             else:
-                chat.append({"role": "assistant", "content": context_summary(result, list(clauses.values())),
+                chat.append({"role": "assistant", "content": context_summary(result, list(all_clauses.values())),
                              "result": result, "snapshot": term_sheet_text(ts)})
                 st.rerun()
 

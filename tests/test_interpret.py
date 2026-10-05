@@ -129,10 +129,10 @@ def test_term_sheet_rule_action_verified_against_term_sheet():
 
 
 def dev(key, quote, change_type="modify", change="c", evidence="x", term="liquidated damages",
-        match="same_term", relation=""):
+        match="same_term", relation="", new_text=""):
     return {"clause_key": key, "summary": "s", "requested_change": change,
             "change_type": change_type, "provision_quote": quote, "request_term": term,
-            "term_match": match, "relation": relation, "evidence": evidence}
+            "term_match": match, "relation": relation, "evidence": evidence, "new_text": new_text}
 
 
 LD_QUOTE = "at the rate of 0.05 (zero point zero five) percent of the Contract Price per day"

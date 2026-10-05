@@ -1,0 +1,208 @@
+"""Wording changes written into clause text. Pure code, no AI.
+
+A change the user asked for is made on ONE unit of text: a numbered sentence, a lettered point, a paragraph or a table cell
+(or a new sentence added at the end of a clause). The AI proposes the new text of that unit; this module finds the unit, checks the
+proposal against the request, applies accepted changes to a clause library, and marks up before and after for the page.
+Nothing here trusts the proposal: it must keep the rest of the sentence, change it only around the quoted words, bring in the
+figures the user gave and no others, and write each figure the way the contract does (digits, then the same figure in words)."""
+import difflib
+import re
+from decimal import Decimal, InvalidOperation
+
+from core.clause_params import int_words, number_words
+from core.clauses import Item
+from core.figures import numbers_in
+
+KEEP_MODIFY = 0.6          # share of the old sentence's words that must survive a modify
+KEEP_REMOVE = 0.3          # ... and a remove_part (which removes some of them on purpose)
+MARGIN_WORDS = 2           # words around the quoted text that a rewrite may also touch (a/an, plural, a joining word)
+MAX_LENGTH = 700           # characters in a new sentence
+
+_FIGURE_WITH_WORDS = re.compile(r"(\d+(?:\.\d+)?)\s*%?\s*\(([A-Za-z][A-Za-z \-]*)\)")
+
+
+def norm(text):
+    return " ".join((text or "").split())
+
+
+# ---------------------------------------------------------------------------------------- finding the unit
+def units(clause):
+    """[(location, text)] for every piece of text a change can apply to. A location says where the text lives."""
+    out = [(("paragraph", i), p) for i, p in enumerate(clause.plain_paragraphs)]
+    for i, item in enumerate(clause.items):
+        out.append((("item", i), item.text))
+        out += [(("lettered", i, j), sub) for j, sub in enumerate(item.lettered)]
+    for t, table in enumerate(clause.tables):
+        for r, row in enumerate(table["rows"]):
+            out += [(("cell", t, r, c), cell) for c, cell in enumerate(row)]
+    return out
+
+
+def find_unit(clause, quote):
+    """(location, text) of the one unit that contains `quote`, or None when no unit does or more than one does."""
+    wanted = norm(quote).lower()
+    if not wanted:
+        return None
+    found = [(loc, text) for loc, text in units(clause) if wanted in norm(text).lower()]
+    return found[0] if len(found) == 1 else None
+
+
+# ---------------------------------------------------------------------------------------- checking a proposal
+def _closure(values):
+    """The figures a request brings in, with the numbers its words are made of: "0.03" is spelled "zero point zero three",
+    "24" is "twenty-four" (20 and 4), "120" is "one hundred and twenty" (1, 100 and 20)."""
+    out = set()
+    for v in values:
+        out.add(v)
+        out |= {float(ch) for ch in repr(v) if ch.isdigit()}
+        if v == int(v) and 0 < v < 1000:
+            hundreds, rest = divmod(int(v), 100)
+            if hundreds:
+                out |= {float(hundreds), 100.0}
+            out.add(float(rest))
+            if rest >= 20:
+                out |= {float(rest // 10 * 10), float(rest % 10)}
+    return out
+
+
+def _expected_words(figure):
+    try:
+        value = Decimal(figure)
+    except InvalidOperation:
+        return None
+    if value == value.to_integral():
+        return int_words(int(value)) if 0 < value < 1000 else None
+    return number_words(float(value)) if 0 < value <= 100 else None
+
+
+def figure_mismatches(text, known=""):
+    """'15 (fourteen) days' -> ['15 (fourteen)']: a figure whose words in brackets say another number. Pairs already in
+    `known` (the old sentence) are not looked at again."""
+    already = {m.group(0).lower() for m in _FIGURE_WITH_WORDS.finditer(known)}
+    bad = []
+    for m in _FIGURE_WITH_WORDS.finditer(text):
+        if m.group(0).lower() in already:
+            continue
+        words = re.sub(r"\s+percent$", "", norm(m.group(2)).lower())
+        expected = _expected_words(m.group(1))
+        if expected is not None and words != expected:
+            bad.append(m.group(0))
+    return bad
+
+
+def _word_spans(text):
+    return [(m.start(), m.end()) for m in re.finditer(r"\S+", text)]
+
+
+def _quote_range(old, quote):
+    """(first word, last word) of the quoted text in `old`, in words; None when it cannot be located."""
+    at = old.lower().find(norm(quote).lower())
+    if at < 0:
+        return None
+    end = at + len(norm(quote))
+    spans = _word_spans(old)
+    inside = [n for n, (s, e) in enumerate(spans) if e > at and s < end]
+    return (inside[0], inside[-1]) if inside else None
+
+
+def check_rewrite(old, new, change_type, quote, request_text):
+    """"" when the new text may be written into the contract, else the reason, as a sentence for the user.
+    `old` is the unit being changed ("" for an added sentence); `request_text` is what the user asked for."""
+    new_n, old_n = norm(new), norm(old)
+    if not new_n:
+        return "The AI did not write the new wording."
+    if len(new_n) > MAX_LENGTH:
+        return "The new wording is too long to check."
+    asked = _closure(numbers_in(request_text))
+    brought_in = numbers_in(new_n) - numbers_in(old_n)
+    if brought_in - asked:
+        return "The new wording has a figure that you did not give."
+    bad = figure_mismatches(new_n, old_n)
+    if bad:
+        return f"A figure and its words do not agree ({bad[0]})."
+    if change_type == "add":
+        return ""
+    if new_n.lower() == old_n.lower():
+        return "The wording would not change."
+    new_numbers = numbers_in(request_text) - numbers_in(old_n)
+    if new_numbers and not (new_numbers & numbers_in(new_n)):
+        return "The new wording does not contain the figure you asked for."
+    old_w, new_w = old_n.split(), new_n.split()
+    matcher = difflib.SequenceMatcher(None, [w.lower() for w in old_w], [w.lower() for w in new_w], autojunk=False)
+    kept = sum(size for _, _, size in matcher.get_matching_blocks()) / max(1, len(old_w))
+    if kept < (KEEP_REMOVE if change_type == "remove_part" else KEEP_MODIFY):
+        return "The new wording changes much more of the sentence than you asked for."
+    quoted = _quote_range(old_n, quote)
+    if quoted:
+        low, high = quoted[0] - MARGIN_WORDS, quoted[1] + MARGIN_WORDS
+        for tag, i1, i2, _, _ in matcher.get_opcodes():
+            if tag == "equal":
+                continue
+            if (i1 < low or i2 - 1 > high) if i2 > i1 else (i1 < low or i1 > high + 1):
+                return "The new wording changes parts of the sentence you did not ask about."
+    if change_type == "remove_part" and norm(quote).lower() in new_n.lower():
+        return "The part to remove is still in the new wording."
+    return ""
+
+
+# ---------------------------------------------------------------------------------------- applying changes
+def apply_edits(library, edits, failed=None):
+    """Writes each accepted change into `library` in place. An edit is {"id", "clause_key", "change_type", "old", "new",
+    "summary"}. One whose sentence is no longer there (the clause text changed since) is not applied; it is added to `failed`."""
+    by_key = {c.key: c for c in library}
+    for edit in edits or []:
+        clause = by_key.get(edit["clause_key"])
+        ok = False
+        if clause is not None and edit["change_type"] == "add":
+            if clause.items:
+                clause.items.append(Item(edit["new"]))
+            else:
+                clause.plain_paragraphs.append(edit["new"])
+            ok = True
+        elif clause is not None:
+            for loc, text in units(clause):
+                if norm(text) == norm(edit["old"]):
+                    _write(clause, loc, edit["new"])
+                    ok = True
+                    break
+        if not ok and failed is not None:
+            failed.append(edit)
+    return library
+
+
+def _write(clause, loc, text):
+    kind = loc[0]
+    if kind == "paragraph":
+        clause.plain_paragraphs[loc[1]] = text
+    elif kind == "item":
+        clause.items[loc[1]].text = text
+    elif kind == "lettered":
+        clause.items[loc[1]].lettered[loc[2]] = text
+    else:
+        _, t, r, c = loc
+        clause.tables[t]["rows"][r][c] = text
+        if t == 0 and clause.table_rows:
+            clause.table_rows = [tuple(row) for row in clause.tables[0]["rows"]]
+
+
+# ---------------------------------------------------------------------------------------- before and after for the page
+def _escape(word):
+    return re.sub(r"([\\`*_\[\]#>|~$<])", r"\\\1", word)
+
+
+def diff_markup(old, new):
+    """(old, new) as markdown for the page: words taken out are struck through, words put in are bold."""
+    old_w, new_w = norm(old).split(), norm(new).split()
+    matcher = difflib.SequenceMatcher(None, [w.lower() for w in old_w], [w.lower() for w in new_w], autojunk=False)
+    before, after = [], []
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        gone, put = [_escape(w) for w in old_w[i1:i2]], [_escape(w) for w in new_w[j1:j2]]
+        if tag == "equal":
+            before += gone
+            after += put
+            continue
+        if gone:
+            before.append("~~" + " ".join(gone) + "~~")
+        if put:
+            after.append("**" + " ".join(put) + "**")
+    return " ".join(before), " ".join(after)

@@ -19,7 +19,7 @@ from core.signatures import build_signature_block
 from core.vat import vat_warning
 from core.render import render_docx
 from core.renumber import renumber_and_render
-from views.draft_steps import drafts
+from views.draft_steps import drafts, wording_state
 
 
 def plain(text):
@@ -134,7 +134,8 @@ def render_picker(state_key, noun="draft"):
 def render_preview(state_key, noun="draft", download=True, header=False):
     """Numbered preview of the selected clauses, with a Word download unless `download` is False. With `header` the
     contract header from the term sheet is shown above the clauses."""
-    library = library_for(ensure_state(state_key), current_limits(), drafts.drafted_for_library(), current_term_sheet())
+    library = library_for(ensure_state(state_key), current_limits(), drafts.drafted_for_library(), current_term_sheet(),
+                          wording_state.applied())
     header_lines = build_header(st.session_state.get("term_sheet"))
     rendered = renumber_and_render(library)
     signature = build_signature_block(st.session_state.get("term_sheet")) if header else None

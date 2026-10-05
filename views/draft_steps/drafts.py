@@ -111,6 +111,21 @@ def drafted_for_library():
              "before": placement_of(entry_id, drafted)} for entry_id, drafted in kept()]
 
 
+def reword(entry_id, drafted, change_type, old, new):
+    """Writes an accepted wording change into a drafted clause: the sentence `old` becomes `new` (or `new` is added as a last
+    sentence). The result is saved like the user's own Save. False when the sentence is not there any more."""
+    sentences = sentences_of(entry_id, drafted)
+    if change_type == "add":
+        sentences.append(tidy(new))
+    else:
+        at = next((i for i, s in enumerate(sentences) if tidy(s).lower() == tidy(old).lower()), None)
+        if at is None:
+            return False
+        sentences[at] = tidy(new)
+    st.session_state.setdefault(SAVED_STORE, {})[entry_id] = sentences
+    return True
+
+
 def forget(entry_id):
     """Drops a rejected request's draft and every choice made about it."""
     st.session_state.get(DRAFTS_KEY, {}).pop(entry_id, None)

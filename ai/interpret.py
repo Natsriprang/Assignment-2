@@ -10,7 +10,9 @@ import re
 from dataclasses import dataclass, field
 
 from ai.llm import MODEL
+from core import wording
 from core.clause_params import limits_of, limits_text
+from core.figures import numbers_in
 
 
 class InterpretationError(Exception):
@@ -36,6 +38,10 @@ class Deviation:
     change_type: str = "modify"     # "modify" | "remove_part" | "add"
     provision_quote: str = ""       # existing clause text the change applies to; empty for "add"
     evidence_verified: bool = True
+    old_text: str = ""              # the whole sentence the change is made on (empty for "add")
+    new_text: str = ""              # that sentence after the change, or the sentence to add; empty when it could not be checked
+    rewrite_problem: str = ""       # why there is no new_text: a sentence for the user
+    carried: bool = False           # an earlier reply proposed it and it has not been applied or rejected yet
 
 
 @dataclass
@@ -135,6 +141,21 @@ the other candidate fields to empty strings. If an earlier reply of yours alread
 covered by the clause library", reuse exactly the same wording for "request" and the same "evidence", so the \
 user sees one stable list instead of rephrased copies.
 
+For every deviation also fill "new_text", the wording the contract will have after the change:
+   - "modify" and "remove_part": new_text is the WHOLE existing sentence that contains provision_quote (a numbered \
+sentence, a lettered point, a paragraph or a table cell of that clause), copied exactly, with only the requested \
+change made. Keep every other word, the same style and the same defined terms. Where the clause writes a figure as \
+digits followed by the same figure in words in brackets, for example "5 (five) percent" or "7 (seven) days", write \
+the new figure the same way, with the words matching the digits. Use only figures the user gave.
+   - "add": new_text is the new sentence to add at the end of the clause, in the clause's own style, using only the \
+facts and figures the user gave.
+   If you cannot write it safely, set new_text to an empty string; the user will be told.
+A wording change that an earlier reply of yours proposed ("Proposed wording change in <clause>: ...") stands until the \
+user applies it, rejects it or asks for something different. While it stands, keep it as a deviation with the same \
+provision_quote, even when the user's later messages are about something else; never turn it into a question later.
+Clauses marked "drafted in this session" are new clauses the user asked for earlier. They can only be reworded: use a \
+deviation on them, never a clause action.
+
 Rules for every item:
 - "evidence" must be copied verbatim from a user message or from a term sheet value, in its original \
 language. Do not paraphrase it.
@@ -161,7 +182,8 @@ def clause_digest(library):
     blocks = []
     for c in library:
         state = "currently included in the draft" if c.included else "currently excluded from the draft"
-        kind = "optional clause" if c.optional else "standard clause"
+        kind = ("clause drafted in this session (reword only)" if c.category == "drafted"
+                else "optional clause" if c.optional else "standard clause")
         blocks.append(f"[key: {c.key} | title: {c.title} | category: {c.category} | {kind} | {state}]\n"
                       f"{clause_text(c)}")
     return "\n\n".join(blocks)
@@ -188,9 +210,11 @@ def term_sheet_warnings(ts):
     return percent_warnings(ts)
 
 
-def build_schema(clause_keys):
+def build_schema(clause_keys, action_keys=None):
+    """`action_keys` are the clauses that may be added or removed as a whole (default: all). Drafted clauses are left out."""
     string = {"type": "string"}
     key = {"type": "string", "enum": list(clause_keys)}
+    action_key = {"type": "string", "enum": list(clause_keys if action_keys is None else action_keys)}
 
     def obj(**props):
         return {"type": "object", "properties": props, "required": list(props),
@@ -198,7 +222,7 @@ def build_schema(clause_keys):
 
     return obj(
         clause_actions={"type": "array", "items": obj(
-            clause_key=key,
+            clause_key=action_key,
             action={"type": "string", "enum": ["include", "exclude"]},
             reason=string,
             basis={"type": "string", "enum": ["comment", "term_sheet"]},
@@ -208,7 +232,7 @@ def build_schema(clause_keys):
             change_type={"type": "string", "enum": ["modify", "remove_part", "add"]},
             provision_quote=string, request_term=string,
             term_match={"type": "string", "enum": ["same_term", "different_term", "confirmed_by_user"]},
-            relation=string, evidence=string)},
+            relation=string, evidence=string, new_text=string)},
         ambiguities={"type": "array", "items": string},
         unmapped_requests={"type": "array", "items": obj(
             request=string, evidence=string,
@@ -272,7 +296,7 @@ def validate(raw, library, haystack, assistant_text=""):
     seen = set()
     for a in raw.get("clause_actions", []):
         key, action = a.get("clause_key"), a.get("action")
-        if key not in by_key:
+        if key not in by_key or by_key[key].category == "drafted":
             out.notes.append(f"Dropped an action on unknown clause '{key}'.")
             continue
         if key in conflicted or key in seen:
@@ -331,10 +355,42 @@ def validate(raw, library, haystack, assistant_text=""):
                 out.notes.append(f"Turned a requested change on '{clause.title}' into a question: "
                                  "the clause does not use the term you wrote.")
                 continue
-        out.deviations.append(Deviation(
+        deviation = Deviation(
             key, d.get("summary", ""), d.get("requested_change", ""), d.get("evidence", ""),
-            change_type, quote, verified(d.get("evidence", ""))))
+            change_type, quote, verified(d.get("evidence", "")))
+        if _attach_rewrite(deviation, clause, d):
+            out.notes.append(f"Dropped a wording change on '{clause.title}': it already has that wording.")
+            continue
+        out.deviations.append(deviation)
     return out
+
+
+def _attach_rewrite(deviation, clause, raw):
+    """Finds the sentence the change is made on and checks the AI's new wording for it. The deviation gets `new_text`, or
+    `rewrite_problem` saying why not. True when the clause already says what was asked (nothing to change)."""
+    request_text = f"{raw.get('requested_change', '')} {raw.get('evidence', '')}"
+    new = wording.norm(raw.get("new_text") or "")
+    if deviation.change_type == "add":
+        if new and any(wording.norm(text).lower() == new.lower() for _, text in wording.units(clause)):
+            return True
+        reason = wording.check_rewrite("", new, "add", "", request_text)
+    else:
+        found = wording.find_unit(clause, deviation.provision_quote)
+        if found is None:
+            deviation.rewrite_problem = "I could not tell which single sentence the change applies to."
+            return False
+        deviation.old_text = wording.norm(found[1])
+        if new and new.lower() == deviation.old_text.lower():
+            if numbers_in(request_text) and numbers_in(request_text) <= numbers_in(deviation.old_text):
+                return True                                    # the sentence already has the figures asked for
+            deviation.rewrite_problem = "The AI gave back the sentence unchanged."
+            return False
+        reason = wording.check_rewrite(deviation.old_text, new, deviation.change_type, deviation.provision_quote, request_text)
+    if reason:
+        deviation.rewrite_problem = reason
+    else:
+        deviation.new_text = new
+    return False
 
 
 def candidate_question(item, title):
@@ -369,9 +425,64 @@ def context_summary(result, library):
     return "\n".join(lines) or "No changes to the standard contract were found."
 
 
-def interpret_request(ts, library, client, model=MODEL, conversation=None):
+def _unit_texts(clause):
+    return {wording.norm(text).lower() for _, text in wording.units(clause)}
+
+
+def settle(result, library, pending=(), applied_edits=()):
+    """Keeps the picture stable from one reply to the next, in code, whatever the model re-lists.
+    `pending` are the wording changes an earlier reply proposed that the user has neither applied nor rejected: they stay
+    in the result unless this reply replaces them (a change to the same sentence) or the user asked for different figures,
+    or the sentence is no longer there. A question the model raises about a change that is already in the draft (an edit in
+    `applied_edits` with those figures), or about one that is still pending, is dropped: it was answered by the proposal.
+    Mutates and returns `result`."""
+    by_key = {c.key: c for c in library}
+
+    def figures(u):
+        return numbers_in(f"{u.request} {u.evidence} {u.candidate_change}")
+
+    kept = []
+    for u in result.unmapped_requests:
+        nums = figures(u) if u.candidate_key else set()
+        if nums and any(e["clause_key"] == u.candidate_key and nums <= numbers_in(e["new"]) for e in applied_edits):
+            result.notes.append("Dropped a question about a change that is already in the draft.")
+            continue
+        kept.append(u)
+    result.unmapped_requests = kept
+
+    for d in pending:
+        clause = by_key.get(d.clause_key)
+        if clause is None:
+            continue
+        same_sentence = any(x.clause_key == d.clause_key and (
+            (x.old_text and x.old_text == d.old_text) or (x.provision_quote and x.provision_quote == d.provision_quote)
+            or (x.change_type == "add" and d.change_type == "add" and wording.norm(x.new_text).lower() == wording.norm(d.new_text).lower()))
+            for x in result.deviations)
+        if same_sentence:
+            continue
+        if d.change_type == "add":
+            if d.new_text and wording.norm(d.new_text).lower() in _unit_texts(clause):
+                continue
+        elif not d.old_text or wording.norm(d.old_text).lower() not in _unit_texts(clause):
+            continue
+        asked = numbers_in(f"{d.requested_change} {d.evidence}")
+        related = [u for u in result.unmapped_requests if u.candidate_key == d.clause_key]
+        if any(figures(u) and asked and not (figures(u) <= asked or asked <= figures(u)) for u in related):
+            continue                                              # the user is asking for other figures now
+        for u in related:
+            if figures(u) and asked and (figures(u) <= asked or asked <= figures(u)):
+                result.unmapped_requests.remove(u)
+                result.notes.append("Dropped a question about a change that is already proposed above.")
+        d.carried = True
+        result.deviations.append(d)
+        result.notes.append(f"Kept the proposal for '{clause.title}' from your earlier message: it has not been applied or rejected.")
+    return result
+
+
+def interpret_request(ts, library, client, model=MODEL, conversation=None, pending=(), applied_edits=()):
     """AI call 1. `conversation` is a list of {"role": "user" | "assistant", "content": str}.
-    `client` is any object exposing the OpenAI chat.completions interface."""
+    `client` is any object exposing the OpenAI chat.completions interface. `pending` and `applied_edits` keep the result
+    steady between replies (see `settle`)."""
     conversation = conversation or []
     transcript = "\n".join(f"{'User' if m['role'] == 'user' else 'Assistant'}: {m['content']}"
                            for m in conversation) or "(no messages)"
@@ -386,7 +497,7 @@ def interpret_request(ts, library, client, model=MODEL, conversation=None):
                   {"role": "user", "content": user_message}],
         response_format={"type": "json_schema", "json_schema": {
             "name": "interpretation", "strict": True,
-            "schema": build_schema([c.key for c in library])}},
+            "schema": build_schema([c.key for c in library], [c.key for c in library if c.category != "drafted"])}},
     )
     choice = response.choices[0]
     if getattr(choice.message, "refusal", None):
@@ -400,7 +511,8 @@ def interpret_request(ts, library, client, model=MODEL, conversation=None):
 
     user_text = "\n".join(m["content"] for m in conversation if m["role"] == "user")
     assistant_text = "\n".join(m["content"] for m in conversation if m["role"] == "assistant")
-    return validate(raw, library, "\n".join([term_sheet_text(ts), user_text]), assistant_text)
+    result = validate(raw, library, "\n".join([term_sheet_text(ts), user_text]), assistant_text)
+    return settle(result, library, pending, applied_edits)
 
 
 def resolve_included(library, accepted_actions):
