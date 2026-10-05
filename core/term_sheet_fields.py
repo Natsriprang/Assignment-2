@@ -43,8 +43,11 @@ class TermSheet:
 
     attachment_no: str = ""            # the attachment that yields to the Agreement if they differ
 
-    start_date: str = ""
+    deadline_mode: str = ""            # "calendar" | "period" | "" -- which pair below the contract uses
+    start_date: str = ""               # calendar dates ...
     completion_date: str = ""
+    start_days: str = ""               # ... or days after signing
+    completion_days: str = ""
 
     owner_contact_name: str = ""
     owner_contact_position: str = ""
@@ -62,11 +65,12 @@ class TermSheet:
 
 REQUIRED_FIELDS = [
     "project_name", "project_location", "capacity", "owner_name", "contractor_name",
-    "contract_price_number", "start_date", "completion_date",
+    "contract_price_number",
 ]
 
 NEW_FIELD_DEFAULTS = {"owner_country": "", "contractor_country": "Thailand", "signing_place_choice": "",
-                      "signing_place_other": "", "payment_days": "30", "attachment_no": ""}
+                      "signing_place_other": "", "payment_days": "30", "attachment_no": "",
+                      "deadline_mode": "", "start_days": "", "completion_days": ""}
 
 
 def ensure_fields(term_sheet):
@@ -82,3 +86,17 @@ def signing_place(term_sheet):
     choice = getattr(term_sheet, "signing_place_choice", "")
     source = {"owner": "owner_address", "contractor": "contractor_address", "other": "signing_place_other"}.get(choice)
     return (getattr(term_sheet, source, "") or "").strip() if source else ""
+
+
+def missing_required(term_sheet):
+    """Names of the fields still needed before the draft can start. The deadline needs a mode and the pair it names."""
+    from core.deadline import deadline_choice, is_days
+    if term_sheet is None:
+        return REQUIRED_FIELDS + ["deadline_mode"]
+    missing = [f for f in REQUIRED_FIELDS if not getattr(term_sheet, f, "")]
+    mode = deadline_choice(term_sheet)
+    if not mode:
+        return missing + ["deadline_mode"]
+    if mode == "calendar":
+        return missing + [f for f in ("start_date", "completion_date") if not (getattr(term_sheet, f, "") or "").strip()]
+    return missing + [f for f in ("start_days", "completion_days") if not is_days(getattr(term_sheet, f, ""))]

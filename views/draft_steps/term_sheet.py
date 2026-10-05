@@ -6,7 +6,8 @@ import streamlit as st
 
 from core.capacity import UNITS, parse_capacity
 from core.clause_params import PARAMS
-from core.term_sheet_fields import TermSheet, Installment, REQUIRED_FIELDS, ensure_fields, signing_place
+from core.deadline import deadline_choice, deadline_warning, is_days
+from core.term_sheet_fields import TermSheet, Installment, ensure_fields, missing_required, signing_place
 from core.vat import vat_choice, vat_warning
 from core.xlsx_parser import FIELD_CELLS, parse_xlsx
 from views.draft_steps import flow, term_check
@@ -15,12 +16,14 @@ from views.draft_steps import flow, term_check
 PLACE_LABELS = {"": "\u2014 not chosen \u2014", "owner": "Owner's registered address",
                "contractor": "Contractor's registered address", "other": "Other place"}
 IMPORTED_FIELDS = set(FIELD_CELLS) | {"capacity_unit"}
+DEADLINE_FIELDS = ("deadline_mode", "start_days", "completion_days")       # read together from the start/completion cells
+DEADLINE_LABELS = {"": "\u2014 not chosen \u2014", "calendar": "Calendar dates", "period": "A period from signing"}
 VAT_LABELS = {"": "\u2014 not chosen \u2014", "inclusive": "Inclusive of VAT", "exclusive": "Exclusive of VAT"}
 
 
 def is_complete():
     ts = st.session_state.get("term_sheet")
-    return ts is not None and all(getattr(ts, f) for f in REQUIRED_FIELDS)
+    return ts is not None and not missing_required(ts)
 
 
 def render():
@@ -39,12 +42,16 @@ def render():
     if uploaded and st.button("Auto-fill the form"):
         parsed = parse_xlsx(uploaded)
         for f in parsed.__dataclass_fields__:
-            if f != "installments" and f not in IMPORTED_FIELDS:
+            if f != "installments" and f not in IMPORTED_FIELDS or f in DEADLINE_FIELDS:
                 continue                       # fields the Excel does not hold keep what the user has
             if f == "installments":
                 if parsed.installments:
                     st.session_state.term_sheet.installments = parsed.installments
             elif getattr(parsed, f):
+                setattr(st.session_state.term_sheet, f, getattr(parsed, f))
+
+        if parsed.start_date or parsed.completion_date:                 # the mode and the days go with the two cells they come from
+            for f in DEADLINE_FIELDS:
                 setattr(st.session_state.term_sheet, f, getattr(parsed, f))
 
         st.session_state.form_version += 1  # see the note on `v` above
@@ -125,9 +132,21 @@ def render():
         st.rerun()
 
     st.subheader("Completion deadline")
+    mode = deadline_choice(ts)
+    ts.deadline_mode = st.selectbox("The Works start and finish by", list(DEADLINE_LABELS), index=list(DEADLINE_LABELS).index(mode),
+                                    format_func=DEADLINE_LABELS.get, key=f"deadline_mode_{v}")
     c1, c2 = st.columns(2)
-    ts.start_date = c1.text_input("Start date", ts.start_date)
-    ts.completion_date = c2.text_input("Completion date", ts.completion_date)
+    if ts.deadline_mode == "calendar":
+        ts.start_date = c1.text_input("Start date", ts.start_date)
+        ts.completion_date = c2.text_input("Completion date", ts.completion_date)
+    elif ts.deadline_mode == "period":
+        ts.start_days = c1.text_input("Start within (days after signing)", ts.start_days, key=f"start_days_{v}")
+        ts.completion_days = c2.text_input("Complete within (days after signing)", ts.completion_days, key=f"completion_days_{v}")
+        for label, value in (("Start", ts.start_days), ("Completion", ts.completion_days)):
+            if value.strip() and not is_days(value):
+                st.error(f"{label}: enter a whole number of days from 1 to 999.")
+    if deadline_warning(ts):
+        st.error("\u2757 " + deadline_warning(ts))
 
     st.subheader("Contract documents")
     ts.attachment_no = st.text_input("Attachment no. that yields to the Agreement", ts.attachment_no, key=f"attach_{v}",
@@ -163,7 +182,7 @@ def render():
         ts.contractor_contact_phone = st.text_input("Phone / email", ts.contractor_contact_phone, key=f"con_cph_{v}")
 
     st.divider()
-    missing = [f for f in REQUIRED_FIELDS if not getattr(ts, f)]
+    missing = missing_required(ts)
     if missing:
         st.warning(f"Required before continuing: {', '.join(missing)}")
     if st.button("Continue \u2192", disabled=bool(missing), type="primary", key="term_continue"):

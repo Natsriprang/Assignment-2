@@ -9,6 +9,7 @@ import re
 import openpyxl
 
 from core.capacity import format_number, parse_capacity
+from core.deadline import apply_import
 from core.term_sheet_fields import Installment, TermSheet
 
 INSTALLMENT_PATTERN = re.compile(r"installment\s*(\d+)", re.IGNORECASE)
@@ -92,4 +93,5 @@ def parse_xlsx(file) -> TermSheet:
             )
 
     ts.installments = [installments[k] for k in sorted(installments, key=int)]
+    apply_import(ts)
     return ts

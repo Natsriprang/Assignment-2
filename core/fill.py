@@ -67,21 +67,31 @@ def format_date(text):
     return f"{when.day} {_MONTHS[when.month - 1]} {when.year}"
 
 
-def fill_deadline(text, values):
-    """The commencement and completion blanks. A period fills "within [*]" as typed; a calendar date turns that
-    "within" into "on or before". Each of the two is decided on its own."""
+def fill_deadline(text, phrases):
+    """The commencement and completion blanks. Each phrase replaces its "within [*]" whole ("on or before 3 October 2026",
+    "within 14 days from the signing date of this Agreement"); None keeps the blank."""
     parts = text.split(BLANK)
-    if len(parts) != len(values) + 1:
+    if len(parts) != len(phrases) + 1:
         return text
     out = parts[0]
-    for value, rest in zip(values, parts[1:]):
-        if not value:
+    for phrase, rest in zip(phrases, parts[1:]):
+        if not phrase:
             out += BLANK + rest
-        elif looks_like_date(value):
-            out = (out[:-len("within ")] + "on or before " if out.endswith("within ") else out) + format_date(value) + rest
         else:
-            out += value + rest
+            out = (out[:-len("within ")] if out.endswith("within ") else out) + phrase + rest
     return out
+
+
+def deadline_phrases(ts):
+    """What the term sheet says about the start and the completion, as the clause words it. Nothing until a mode is chosen."""
+    from core.deadline import deadline_choice, is_days
+    mode = deadline_choice(ts)
+    if mode == "calendar":
+        return [f"on or before {format_date(v)}" if v else None for v in (_text(ts, "start_date"), _text(ts, "completion_date"))]
+    if mode == "period":
+        return [f"within {int(v)} days from the signing date of this Agreement" if is_days(v) else None
+                for v in (_text(ts, "start_days"), _text(ts, "completion_days"))]
+    return [None, None]
 
 
 def fill_slots(text, values):
@@ -155,16 +165,19 @@ def fill_template(library, term_sheet):
         for table in price_clause.tables:
             del table["rows"][TEMPLATE_ROWS:]                       # so filling twice gives the same table
             for r, row in enumerate(table["rows"]):                 # the template's rows keep their conditions
-                for c, value in enumerate(cells(installments[r] if r < len(installments) else None)):
+                inst = installments[r] if r < len(installments) else None
+                for c, value in enumerate(cells(inst)):
                     if value is not None and row[c] == BLANK:
                         row[c] = value
+                if inst and _text(inst, "condition"):               # the term sheet's condition wins; a blank keeps the template's
+                    row[3] = _text(inst, "condition")
             for inst in installments[TEMPLATE_ROWS:]:               # more installments than rows: one more row each
                 table["rows"].append([v or BLANK for v in cells(inst)] + [_text(inst, "condition") or BLANK])
         price_clause.table_rows = [tuple(row) for row in price_clause.tables[0]["rows"]]
 
     deadline = _item(by_key.get("completion_deadline"), 0)
     if deadline:
-        deadline.text = fill_deadline(deadline.text, [_text(ts, name) for name in ("start_date", "completion_date")])
+        deadline.text = fill_deadline(deadline.text, deadline_phrases(ts))
     return library
 
 

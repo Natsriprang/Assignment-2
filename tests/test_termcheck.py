@@ -71,7 +71,7 @@ def test_nothing_wrong_is_an_empty_list():
 
 
 def test_the_prompt_and_schema():
-    assert "calendar date or a period" in CHECK_PROMPT and "do not report the form" in CHECK_PROMPT
+    assert "deadline_mode" in CHECK_PROMPT and "ignore the other pair" in CHECK_PROMPT and "start_days" in CHECK_PROMPT
     assert "periods and not calendar dates" not in CHECK_PROMPT and "Do not report missing optional fields" in CHECK_PROMPT
     enum = check_schema()["properties"]["issues"]["items"]["properties"]["field"]["enum"]
     assert enum == FIELDS and "limits" not in FIELDS and "installments" in FIELDS and "payment_days" in FIELDS

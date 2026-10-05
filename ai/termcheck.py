@@ -20,10 +20,10 @@ inside it.
 Report only problems that would put a wrong or unclear fact into the contract:
 - values that contradict each other (the price in digits against the price in words, installment percentages that do \
 not add up, the capacity unit against the project name);
-- start_date and completion_date may each be a calendar date or a period (for example "14 days after signing"); \
-the contract is worded to suit either, so do not report the form. Report them only if they contradict each other \
-(a completion date before the start date, a completion period that cannot follow the start) or are neither a date \
-nor a period;
+- the start and completion of the Works are set either by calendar dates (start_date, completion_date) or by a number \
+of days after signing (start_days, completion_days), as deadline_mode says. Only the pair that deadline_mode names is \
+used; ignore the other pair and do not report the choice. Report that pair only if it contradicts itself (a completion \
+date before the start date, completion days fewer than start days);
 - entries that look misplaced (a company name in the registration number field, a person's name in an address \
 field, a country in the place field).
 

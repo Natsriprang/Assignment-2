@@ -18,7 +18,7 @@ from core.draft_state import library_for
 from core.figures import numbers_in
 from core.placement import placement_from_references
 from core.reference_library import load_references
-from core.term_sheet_fields import REQUIRED_FIELDS
+from core.term_sheet_fields import missing_required
 from views import clause_sandbox
 from views.draft_steps import drafts, flow, term_check
 
@@ -351,7 +351,7 @@ def render():
                "you want changed and apply what it proposes.")
 
     ts = st.session_state.get("term_sheet")
-    missing = [f for f in REQUIRED_FIELDS if ts is None or not getattr(ts, f)]
+    missing = missing_required(ts)
     if missing:
         st.warning("Complete the required term sheet fields first.")
         st.button("Back to term sheet", on_click=flow.go_back)
