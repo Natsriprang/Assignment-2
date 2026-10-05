@@ -7,6 +7,7 @@ import streamlit as st
 from core.capacity import UNITS, parse_capacity
 from core.clause_params import PARAMS
 from core.deadline import deadline_choice, deadline_warning, is_days
+from core.field_rules import rule_warnings
 from core.field_titles import title
 from core.term_checks import blank_fields, contradictions
 from core.term_sheet_fields import TermSheet, Installment, ensure_fields, missing_required, signing_place
@@ -19,6 +20,7 @@ PLACE_LABELS = {"": "\u2014 not chosen \u2014", "owner": "Owner's registered add
                "contractor": "Contractor's registered address", "other": "Other place"}
 IMPORTED_FIELDS = set(FIELD_LABELS) | {"capacity_unit"}
 IMPORT_REPORT_KEY = "term_sheet_import_report"
+CHECKED_KEY = "term_sheet_checked"      # set by the first Continue: the term sheet's warnings are shown from then on, until the step is left
 DEADLINE_FIELDS = ("deadline_mode", "completion_days")       # read together from the start/completion cells
 DEADLINE_LABELS = {"": "\u2014 not chosen \u2014", "calendar": "Calendar dates", "period": "A period from signing"}
 VAT_LABELS = {"": "\u2014 not chosen \u2014", "inclusive": "Inclusive of VAT", "exclusive": "Exclusive of VAT"}
@@ -46,11 +48,19 @@ def show_import_report():
 
 
 def try_continue(ts):
-    """The one way out of this step, for the Continue button and for the header's next arrow: the AI check first, then on.
-    If the check has points to show (or could not run) the user stays here, where they are shown, and the next try goes on."""
+    """The one way out of this step, for the Continue button and for the header's next arrow. This press is the check: the exact
+    checks and the AI check are made, and if there is anything to show (blanks, contradictions, broken notes, AI points, or the
+    AI check could not run) the user stays here, where it is shown; the next press goes on."""
+    held = False
+    if not st.session_state.get(CHECKED_KEY):
+        st.session_state[CHECKED_KEY] = True
+        held = bool(code_findings(ts))
     if term_check.run_check(ts) == "ran" and term_check.needs_a_look():
         term_check.hold(ts)
+        held = True
+    if held:
         st.rerun()
+    st.session_state.pop(CHECKED_KEY, None)
     flow.go_next()
     st.rerun()
 
@@ -59,15 +69,28 @@ def advance():
     try_continue(ensure_fields(st.session_state.term_sheet))
 
 
-def show_checks(ts):
-    """Every warning about the term sheet, on the Term sheet page: blanks, values that contradict each other (both exact,
-    by code), then what the AI check found. Nothing here blocks Continue."""
+def code_findings(ts):
+    """What the exact checks find: the blanks (one sentence), then values that contradict each other or break a note."""
+    found = []
     blanks = blank_fields(ts)
     if blanks:
-        st.warning(term_check.plain("Not filled in: " + ", ".join(blanks) + "."))
-    for text in contradictions(ts):
-        st.warning(term_check.plain(text))
-    term_check.show_result(ts)
+        found.append("Not filled in: " + ", ".join(blanks) + ".")
+    return found + contradictions(ts) + rule_warnings(ts, term_check.current_notes())
+
+
+def show_checks(ts):
+    """Every warning about the term sheet, on the Term sheet page, and only after Continue has been pressed: that press is the
+    check. Once shown they follow the form (a warning goes when its cause is fixed) until the step is left. Nothing here
+    blocks Continue."""
+    shown = False
+    if st.session_state.get(CHECKED_KEY):
+        for text in code_findings(ts):
+            st.warning(term_check.plain(text))
+            shown = True
+    if term_check.show_result(ts):
+        shown = True
+    if shown:
+        st.caption("Press Continue again to go on without changing anything.")
 
 
 def render():
@@ -88,6 +111,9 @@ def render():
         parsed, report = parse_xlsx_report(uploaded)
         st.session_state[IMPORT_REPORT_KEY] = {"name": uploaded.name, "missing": report.missing, "conflicts": report.conflicts,
                                                "nothing": report.nothing_found}
+        st.session_state.pop(CHECKED_KEY, None)                    # a fresh import has not been checked: no warnings yet
+        if not report.nothing_found:
+            st.session_state[term_check.NOTES_KEY] = report.notes
         for f in parsed.__dataclass_fields__:
             if f != "installments" and f not in IMPORTED_FIELDS or f in DEADLINE_FIELDS:
                 continue                       # fields the Excel does not hold keep what the user has

@@ -56,6 +56,7 @@ FIELD_LABELS = {
 class ImportReport:
     missing: list = field(default_factory=list)      # labels not found in column B
     conflicts: list = field(default_factory=list)    # sentences about repeated labels whose copies differ
+    notes: dict = field(default_factory=dict)        # term sheet field -> the note beside its label (column D), when there is one
 
     @property
     def nothing_found(self):
@@ -100,6 +101,9 @@ def parse_xlsx_report(file):
         if not rows:
             report.missing.append(label)
             continue
+        note = next((n for n in (_clean(ws.cell(row=r, column=4).value) for r in rows) if n), "")
+        if note:
+            report.notes[field_name] = note
         found = [(r, _clean(ws.cell(row=r, column=3).value)) for r in rows]
         filled = [(r, v) for r, v in found if v]
         if filled:

@@ -75,7 +75,8 @@ def test_the_prompt_and_schema():
     for word in ("thai", "rooftop", "solar", "agreement", "contract ", "draft the", "construction", "deadline_mode", "start_days"):
         assert word not in low, f"the check prompt must be about the term sheet only, not about {word!r}"
     assert "wrong kind for its field" in low and "never report" in low and "plausible" in low
-    assert "do not report them" in low and "empty fields" in low                    # prices, percentages, dates, blanks: not the AI's job
+    assert "<notes>" in low and "breaks, in meaning, the note" in low
+    assert "never count characters or digits yourself" in low and "code checks counts, lengths, digits" in low   # counting is code's job
     assert "country in the place field" not in low and "contradict each other" not in low
     enum = check_schema()["properties"]["issues"]["items"]["properties"]["field"]["enum"]
     assert enum == FIELDS and "limits" not in FIELDS and "installments" in FIELDS and "payment_days" in FIELDS
@@ -84,6 +85,41 @@ def test_the_prompt_and_schema():
     check_term_sheet(TS, client)
     sent = client.requests[0]["messages"]
     assert "<term_sheet>" in sent[1]["content"] and "start_date: 1 Nov 2026" in sent[1]["content"]
+    assert "<notes>" not in sent[1]["content"], "no notes to give, no notes block"
+    props = check_schema()["properties"]["issues"]["items"]
+    assert "rule" in props["properties"] and "rule" in props["required"]
+
+
+def test_notes_are_given_to_the_ai_only_when_they_are_about_meaning_and_not_already_checked():
+    from ai.termcheck import notes_text
+    ts = TermSheet(owner_signatory="Nat", owner_reg_no="1020304050601", contract_no="UM123426", contract_date="3 October 2026",
+                   roof_owner="", contract_price_words="One-hundred Thousand", start_date="3 October 2026")
+    notes = {"owner_signatory": "Full name(s), matching the company's signing authority", "owner_reg_no": "13 digits",
+             "contract_no": "8 digits: first 2 start from 01", "contract_date": "Must be consistent with the last 6 digits of the contract no.",
+             "roof_owner": "Name of the roof owner", "contract_price_words": "2 decimal places", "start_date": "DD Month YYYY",
+             "vat_treatment": "inclusive / exclusive", "contractor_signatory": "Full name(s)"}
+    assert notes_text(ts, notes) == "owner_signatory: Full name(s), matching the company's signing authority"
+    client = Client({"issues": []})
+    check_term_sheet(ts, client, notes=notes)
+    sent = client.requests[0]["messages"][1]["content"]
+    assert sent.endswith("<notes>\nowner_signatory: Full name(s), matching the company's signing authority\n</notes>")
+    assert "13 digits" not in sent and "2 decimal places" not in sent
+
+
+def test_a_point_that_quotes_a_note_must_quote_a_real_one():
+    ts = TermSheet(owner_signatory="Nat")
+    notes = {"owner_signatory": "Full name(s), matching the company's signing authority"}
+    given = "owner_signatory: Full name(s), matching the company's signing authority"
+    good = {"issues": [issue("owner_signatory", "Looks like a first name only.", "Nat")]}
+    good["issues"][0]["rule"] = "Full name(s), matching the company's signing authority"
+    c = validate_check(good, term_sheet_text(ts), given)
+    assert [(i.field, i.rule) for i in c.issues] == [("owner_signatory", "Full name(s), matching the company's signing authority")]
+    bad = {"issues": [dict(good["issues"][0], rule="Must be exactly two words")]}
+    c = validate_check(bad, term_sheet_text(ts), given)
+    assert c.issues == [] and any("note it quotes is not one of the notes" in n for n in c.notes)
+    plain = {"issues": [dict(good["issues"][0], rule="")]}                           # a wrong-kind point has no note
+    assert len(validate_check(plain, term_sheet_text(ts), given).issues) == 1
+    assert check_term_sheet(ts, Client({"issues": good["issues"]}), notes=notes).issues[0].rule.startswith("Full name")
 
 
 def test_a_failed_call_is_tried_once_more_and_counted_once_per_success():
