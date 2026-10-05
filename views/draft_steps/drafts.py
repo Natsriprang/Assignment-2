@@ -126,6 +126,30 @@ def reword(entry_id, drafted, change_type, old, new):
     return True
 
 
+def snapshot(entry_id):
+    """Everything about a request's draft, so that Undo can bring a rejected request back. None when it has no draft."""
+    drafted = st.session_state.get(DRAFTS_KEY, {}).get(entry_id)
+    if drafted is None:
+        return None
+
+    def copy(store):
+        value = st.session_state.get(store, {}).get(entry_id)
+        return list(value) if isinstance(value, list) else value
+
+    return {"drafted": drafted, "saved": copy(SAVED_STORE), "placement": copy(PLACEMENT_STORE), "keep": copy(KEEP_STORE),
+            "keep_widget": st.session_state.get(keep_key(entry_id)), "placement_widget": st.session_state.get(placement_key(entry_id))}
+
+
+def restore(entry_id, snap):
+    """Puts a draft back as snapshot() found it."""
+    if not snap:
+        return
+    st.session_state.setdefault(DRAFTS_KEY, {})[entry_id] = snap["drafted"]
+    for store, name in ((SAVED_STORE, "saved"), (PLACEMENT_STORE, "placement"), (KEEP_STORE, "keep")):
+        if snap[name] is not None:
+            st.session_state.setdefault(store, {})[entry_id] = snap[name]
+
+
 def forget(entry_id):
     """Drops a rejected request's draft and every choice made about it."""
     st.session_state.get(DRAFTS_KEY, {}).pop(entry_id, None)
