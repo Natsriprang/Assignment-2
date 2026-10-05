@@ -1,5 +1,6 @@
 """Rules the term sheet's author wrote as notes beside the fields (column D of the Excel), checked by code where a rule can be
-checked exactly. Pure code. Notes that cannot be checked exactly are left for the AI check, which is told never to count."""
+checked exactly: a number of digits, a date that must agree with the contract no., a name that must be a full name. Pure code.
+Notes that cannot be checked exactly are not enforced."""
 import re
 from functools import lru_cache
 from pathlib import Path
@@ -11,7 +12,7 @@ TEMPLATE = Path(__file__).resolve().parent.parent / "data" / "term_sheet_templat
 
 _DIGITS = re.compile(r"^\s*(\d+)\s+digits?\s*$", re.IGNORECASE)                       # "13 digits"
 _LAST_DIGITS = re.compile(r"last\s+(\d+)\s+digits\s+of\s+the\s+contract\s+no", re.IGNORECASE)   # "...the last 6 digits of the contract no."
-_EXACT_ONLY = re.compile(r"\b(digits?|decimal|characters?|YYYY|inclusive)\b|\bDD\b", re.IGNORECASE)   # about counts and formats: not for the AI
+_FULL_NAME = re.compile(r"\bfull\s+names?\b", re.IGNORECASE)                                          # "Full name(s), matching ..."
 
 
 @lru_cache(maxsize=1)
@@ -44,6 +45,15 @@ def rule_warnings(ts, notes):
             elif len(compact) != int(m.group(1)):
                 out.append(f"{title(name)} \u201c{value}\u201d has {len(compact)} digits, but the term sheet's note says \u201c{note}\u201d.")
             continue
+        if _FULL_NAME.search(note):
+            names = [n.strip() for n in re.split(r"[\n;,&]|\s+and\s+", value) if n.strip()]
+            single = [n for n in names if len(n.split()) < 2]
+            if single:
+                one_line = " / ".join(line.strip() for line in value.split("\n") if line.strip())
+                shown = ", ".join(f"\u201c{n}\u201d" for n in single)
+                out.append(f"{title(name)} \u201c{one_line}\u201d has {shown}, which looks like a first name only, "
+                           f"but the term sheet's note says \u201c{note}\u201d.")
+            continue
         m = _LAST_DIGITS.search(note)
         if m and name == "contract_date" and int(m.group(1)) == 6:
             when, number = date_of(value), re.sub(r"\D", "", _filled(ts, "contract_no"))
@@ -55,14 +65,3 @@ def rule_warnings(ts, notes):
                            f"\u201c{_filled(ts, 'contract_no')}\u201d (day, month and year would end in {expected}), "
                            f"but the term sheet's note says \u201c{note}\u201d.")
     return out
-
-
-def notes_for_ai(ts, notes):
-    """The notes the AI gets: only those about a field that has a value, say something about meaning, and are not already checked
-    by code. {field: note}"""
-    kept = {}
-    for name, note in (notes or {}).items():
-        if not _filled(ts, name) or _DIGITS.match(note) or _EXACT_ONLY.search(note) or (name == "contract_date" and _LAST_DIGITS.search(note)):
-            continue
-        kept[name] = note
-    return kept

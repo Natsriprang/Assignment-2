@@ -15,8 +15,8 @@ from core.term_sheet_fields import Installment, TermSheet
 def complete(**over):
     ts = TermSheet(project_name="Rooftop PV", project_location="Rayong", capacity="500", contract_no="C-011126", contract_date="1 Nov 2026",
                    signing_place_choice="owner", owner_name="Owner Co.", owner_country="Singapore", owner_reg_no="1020304050601",
-                   owner_signatory="Nat", owner_address="1 Owner Road", contractor_name="Sun Build", contractor_reg_no="3533555555555",
-                   contractor_signatory="Noom", contractor_address="2 Builder Road", contract_price_number="100000",
+                   owner_signatory="Nat Sriprang", owner_address="1 Owner Road", contractor_name="Sun Build", contractor_reg_no="3533555555555",
+                   contractor_signatory="Noom Sriprang", contractor_address="2 Builder Road", contract_price_number="100000",
                    contract_price_words="One-hundred Thousand", attachment_no="3", vat_treatment="exclusive", deadline_mode="calendar",
                    start_date="3 October 2026", completion_date="10 October 2026",
                    owner_contact_name="John", owner_contact_position="Director", owner_contact_location="Bangkok",

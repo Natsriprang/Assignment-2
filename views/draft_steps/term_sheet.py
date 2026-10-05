@@ -1,15 +1,14 @@
 """Term sheet ingestion: upload a filled .xlsx to auto-fill the form, or fill it by hand. Every
 field stays editable after auto-fill. The installment table has no fixed row count -- rows come
 from whatever the term sheet actually contains, with add/remove controls for manual adjustment.
-The Continue button is disabled until every required field is filled (validation gate, no AI)."""
+The Check / Recheck button runs the exact checks and the AI check and shows what they found; Continue only moves on, and is
+disabled until every required field is filled and the current term sheet has been checked."""
 import streamlit as st
 
 from core.capacity import UNITS, parse_capacity
 from core.clause_params import PARAMS
 from core.deadline import deadline_choice, deadline_warning, is_days
-from core.field_rules import rule_warnings
 from core.field_titles import title
-from core.term_checks import blank_fields, contradictions
 from core.term_sheet_fields import TermSheet, Installment, ensure_fields, missing_required, signing_place
 from core.vat import vat_choice, vat_warning
 from core.xlsx_parser import FIELD_LABELS, parse_xlsx_report
@@ -20,15 +19,15 @@ PLACE_LABELS = {"": "\u2014 not chosen \u2014", "owner": "Owner's registered add
                "contractor": "Contractor's registered address", "other": "Other place"}
 IMPORTED_FIELDS = set(FIELD_LABELS) | {"capacity_unit"}
 IMPORT_REPORT_KEY = "term_sheet_import_report"
-CHECKED_KEY = "term_sheet_checked"      # set by the first Continue: the term sheet's warnings are shown from then on, until the step is left
 DEADLINE_FIELDS = ("deadline_mode", "completion_days")       # read together from the start/completion cells
 DEADLINE_LABELS = {"": "\u2014 not chosen \u2014", "calendar": "Calendar dates", "period": "A period from signing"}
 VAT_LABELS = {"": "\u2014 not chosen \u2014", "inclusive": "Inclusive of VAT", "exclusive": "Exclusive of VAT"}
 
 
-def is_complete():
+def can_continue():
+    """The next arrow's condition, the same as Continue's: the required fields are filled and this term sheet has been checked."""
     ts = st.session_state.get("term_sheet")
-    return ts is not None and not missing_required(ts)
+    return ts is not None and not missing_required(ts) and term_check.is_checked(ensure_fields(ts))
 
 
 def show_import_report():
@@ -45,52 +44,6 @@ def show_import_report():
                    + ", ".join(rep["missing"]) + ".")
     for note in rep["conflicts"]:
         st.warning(note)
-
-
-def try_continue(ts):
-    """The one way out of this step, for the Continue button and for the header's next arrow. This press is the check: the exact
-    checks and the AI check are made, and if there is anything to show (blanks, contradictions, broken notes, AI points, or the
-    AI check could not run) the user stays here, where it is shown; the next press goes on."""
-    held = False
-    if not st.session_state.get(CHECKED_KEY):
-        st.session_state[CHECKED_KEY] = True
-        held = bool(code_findings(ts))
-    if term_check.run_check(ts) == "ran" and term_check.needs_a_look():
-        term_check.hold(ts)
-        held = True
-    if held:
-        st.rerun()
-    st.session_state.pop(CHECKED_KEY, None)
-    flow.go_next()
-    st.rerun()
-
-
-def advance():
-    try_continue(ensure_fields(st.session_state.term_sheet))
-
-
-def code_findings(ts):
-    """What the exact checks find: the blanks (one sentence), then values that contradict each other or break a note."""
-    found = []
-    blanks = blank_fields(ts)
-    if blanks:
-        found.append("Not filled in: " + ", ".join(blanks) + ".")
-    return found + contradictions(ts) + rule_warnings(ts, term_check.current_notes())
-
-
-def show_checks(ts):
-    """Every warning about the term sheet, on the Term sheet page, and only after Continue has been pressed: that press is the
-    check. Once shown they follow the form (a warning goes when its cause is fixed) until the step is left. Nothing here
-    blocks Continue."""
-    shown = False
-    if st.session_state.get(CHECKED_KEY):
-        for text in code_findings(ts):
-            st.warning(term_check.plain(text))
-            shown = True
-    if term_check.show_result(ts):
-        shown = True
-    if shown:
-        st.caption("Press Continue again to go on without changing anything.")
 
 
 def render():
@@ -111,7 +64,7 @@ def render():
         parsed, report = parse_xlsx_report(uploaded)
         st.session_state[IMPORT_REPORT_KEY] = {"name": uploaded.name, "missing": report.missing, "conflicts": report.conflicts,
                                                "nothing": report.nothing_found}
-        st.session_state.pop(CHECKED_KEY, None)                    # a fresh import has not been checked: no warnings yet
+        st.session_state.pop(term_check.RESULT_KEY, None)          # a fresh import has not been checked
         if not report.nothing_found:
             st.session_state[term_check.NOTES_KEY] = report.notes
         for f in parsed.__dataclass_fields__:
@@ -256,9 +209,13 @@ def render():
         ts.contractor_contact_email = st.text_input("Email", ts.contractor_contact_email, key=f"con_cem_{v}")
 
     st.divider()
-    show_checks(ts)
+    term_check.show_result(ts)
     missing = missing_required(ts)
     if missing:
         st.warning(f"Required before continuing: {', '.join(title(f) for f in missing)}")
-    if st.button("Continue \u2192", disabled=bool(missing), type="primary", key="term_continue"):
-        try_continue(ts)
+    if st.button("Recheck" if term_check.has_result() else "Check term sheet", key="term_check_button"):
+        term_check.run_check(ts)
+        st.rerun()
+    if st.button("Continue \u2192", disabled=bool(missing) or not term_check.is_checked(ts), type="primary", key="term_continue"):
+        flow.go_next()
+        st.rerun()
