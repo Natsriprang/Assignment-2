@@ -66,6 +66,19 @@ def _int_words(n):
     raise ValueError(f"Out of range: {n}")
 
 
+def int_words(n):
+    """1..999 in words: 30 -> 'thirty', 120 -> 'one hundred and twenty'."""
+    if not isinstance(n, int) or isinstance(n, bool) or not 0 < n < 1000:
+        raise ValueError(f"Out of range: {n!r}")
+    hundreds, rest = divmod(n, 100)
+    if not hundreds:
+        return _int_words(rest)
+    if n == 100:
+        return "one hundred"
+    words = f"{_ONES[hundreds]} hundred"
+    return words if not rest else f"{words} and {_int_words(rest)}"
+
+
 def number_words(value):
     whole, _, fraction = format_number(value).partition(".")
     words = _int_words(int(whole))

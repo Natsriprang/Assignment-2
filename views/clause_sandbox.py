@@ -10,6 +10,8 @@ from core.clause_data import build_library
 from core.clauses import cross_reference_scan
 from core.clause_params import limits_of
 from core.draft_state import library_for
+from core.blanks import find_blanks
+from core.fill import fill_warnings
 from core.header import build_header
 from core.vat import vat_warning
 from core.render import render_docx
@@ -36,6 +38,21 @@ def show_vat_notice():
     ts = current_term_sheet()
     if ts is not None and vat_warning(ts):
         st.error("\u2757 " + vat_warning(ts))
+
+
+def show_blanks(header_lines, rendered, ts):
+    """What is still blank in the draft and what the term sheet holds that the text could not show."""
+    for w in fill_warnings(ts):
+        st.warning(plain(w))
+    blanks = find_blanks(header_lines, rendered)
+    if not blanks:
+        st.success("No blanks left in the draft.")
+        return
+    st.warning(f"{len(blanks)} blank{'s' if len(blanks) != 1 else ''} ([*]) left in the draft. They appear as [*] in the "
+               "Word file until they are filled.")
+    with st.expander(f"Where the {len(blanks)} blank{'s are' if len(blanks) != 1 else ' is'}", expanded=True):
+        for b in blanks:
+            st.caption(plain(f"{b.where}: {b.context}"))
 
 
 def checkbox_key(state_key, clause_key):
@@ -91,7 +108,9 @@ def render_preview(state_key, noun="draft", download=True, header=False):
     contract header from the term sheet is shown above the clauses."""
     library = library_for(ensure_state(state_key), current_limits(), drafts.drafted_for_library(), current_term_sheet())
     header_lines = build_header(st.session_state.get("term_sheet"))
+    rendered = renumber_and_render(library)
     if header:
+        show_blanks(header_lines, rendered, current_term_sheet())
         with st.container(border=True):
             for style, text in header_lines:
                 if style == "title":
@@ -100,7 +119,6 @@ def render_preview(state_key, noun="draft", download=True, header=False):
                     st.write(plain(text))
                 else:
                     st.write(plain(("\u2022 " if style == "bullet" else "") + text))
-    rendered = renumber_and_render(library)
     st.subheader(f"Preview ({len(rendered)} clauses)")
 
     flagged = cross_reference_scan(library)

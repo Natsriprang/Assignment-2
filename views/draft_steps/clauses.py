@@ -20,7 +20,7 @@ from core.placement import placement_from_references
 from core.reference_library import load_references
 from core.term_sheet_fields import REQUIRED_FIELDS
 from views import clause_sandbox
-from views.draft_steps import drafts, flow
+from views.draft_steps import drafts, flow, term_check
 
 STATE_KEY = "draft_included"
 DEVIATIONS_KEY = "draft_deviations"
@@ -358,12 +358,8 @@ def render():
         return
 
     clause_sandbox.show_vat_notice()
+    term_check.show_result(ts)
 
-    # Temporary key input; Phase 8 replaces this with the shared credentials module.
-    entered = st.sidebar.text_input("OpenAI API key", type="password",
-                                    value=st.session_state.get("openai_api_key", ""))
-    if entered:
-        st.session_state.openai_api_key = entered
     client = get_client(st.session_state.get("openai_api_key"))
 
     if st.sidebar.button("Clear conversation"):

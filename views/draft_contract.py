@@ -15,6 +15,13 @@ st.session_state[flow.COUNT_KEY] = len(STEPS)
 index = min(flow.current(), len(STEPS) - 1)
 step = STEPS[index]
 
+# One key input for the whole workflow (Phase 8 replaces it with the shared credentials module). It runs before the steps
+# so a step already sees the key typed in this run.
+with st.sidebar:
+    entered = st.text_input("OpenAI API key", type="password", value=st.session_state.get("openai_api_key", ""))
+    if entered:
+        st.session_state.openai_api_key = entered
+
 # The header is created first so it sits on top, but filled after the step runs: the next arrow
 # then reflects what the user just typed instead of the previous run's state.
 header = st.container()

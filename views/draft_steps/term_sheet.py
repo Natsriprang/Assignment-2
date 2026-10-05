@@ -6,12 +6,15 @@ import streamlit as st
 
 from core.capacity import UNITS, parse_capacity
 from core.clause_params import PARAMS
-from core.term_sheet_fields import TermSheet, Installment, REQUIRED_FIELDS
+from core.term_sheet_fields import TermSheet, Installment, REQUIRED_FIELDS, ensure_fields, signing_place
 from core.vat import vat_choice, vat_warning
-from core.xlsx_parser import parse_xlsx
-from views.draft_steps import flow
+from core.xlsx_parser import FIELD_CELLS, parse_xlsx
+from views.draft_steps import flow, term_check
 
 
+PLACE_LABELS = {"": "\u2014 not chosen \u2014", "owner": "Owner's registered address",
+               "contractor": "Contractor's registered address", "other": "Other place"}
+IMPORTED_FIELDS = set(FIELD_CELLS) | {"capacity_unit"}
 VAT_LABELS = {"": "\u2014 not chosen \u2014", "inclusive": "Inclusive of VAT", "exclusive": "Exclusive of VAT"}
 
 
@@ -27,7 +30,7 @@ def render():
     if "form_version" not in st.session_state:
         st.session_state.form_version = 0
 
-    ts = st.session_state.term_sheet
+    ts = ensure_fields(st.session_state.term_sheet)       # an object saved by an older version gets the newer fields
     v = st.session_state.form_version  # bump this whenever ts is updated programmatically (parsing) so
     # every keyed widget below gets a brand-new key and re-initialises from ts, instead of Streamlit
     # reusing whatever is already stored under the old key and ignoring the new `value=` argument.
@@ -36,6 +39,8 @@ def render():
     if uploaded and st.button("Auto-fill the form"):
         parsed = parse_xlsx(uploaded)
         for f in parsed.__dataclass_fields__:
+            if f != "installments" and f not in IMPORTED_FIELDS:
+                continue                       # fields the Excel does not hold keep what the user has
             if f == "installments":
                 if parsed.installments:
                     st.session_state.term_sheet.installments = parsed.installments
@@ -62,18 +67,28 @@ def render():
     c1, c2 = st.columns(2)
     ts.contract_no = c1.text_input("Contract no.", ts.contract_no)
     ts.contract_date = c2.text_input("Contract date", ts.contract_date)
+    c1, c2 = st.columns(2)
+    place_choice = ts.signing_place_choice if ts.signing_place_choice in PLACE_LABELS else ""
+    ts.signing_place_choice = c1.selectbox("Place of signing", list(PLACE_LABELS), index=list(PLACE_LABELS).index(place_choice),
+                                           format_func=PLACE_LABELS.get, key=f"place_choice_{v}")
+    ts.signing_place_other = c2.text_input("Other place", ts.signing_place_other, disabled=ts.signing_place_choice != "other",
+                                           key=f"place_other_{v}")
+    if ts.signing_place_choice in ("owner", "contractor"):
+        st.caption("Will be written as: " + (signing_place(ts) or "(that address is empty)"))
 
     st.subheader("Parties")
     c1, c2 = st.columns(2)
     with c1:
         st.markdown("**Owner**")
         ts.owner_name = st.text_input("Company name", ts.owner_name, key=f"own_name_{v}")
+        ts.owner_country = st.text_input("Country of registration", ts.owner_country, key=f"own_country_{v}")
         ts.owner_reg_no = st.text_input("Registration no.", ts.owner_reg_no, key=f"own_reg_{v}")
         ts.owner_signatory = st.text_input("Authorised signatory", ts.owner_signatory, key=f"own_sig_{v}")
         ts.owner_address = st.text_input("Registered address", ts.owner_address, key=f"own_addr_{v}")
     with c2:
         st.markdown("**Contractor**")
         ts.contractor_name = st.text_input("Company name", ts.contractor_name, key=f"con_name_{v}")
+        ts.contractor_country = st.text_input("Country of registration", ts.contractor_country, key=f"con_country_{v}")
         ts.contractor_reg_no = st.text_input("Registration no.", ts.contractor_reg_no, key=f"con_reg_{v}")
         ts.contractor_signatory = st.text_input("Authorised signatory", ts.contractor_signatory, key=f"con_sig_{v}")
         ts.contractor_address = st.text_input("Registered address", ts.contractor_address, key=f"con_addr_{v}")
@@ -88,6 +103,10 @@ def render():
         ts.vat_treatment = chosen_vat
     if vat_warning(ts):
         st.error("\u2757 " + vat_warning(ts))
+    days = ts.payment_days
+    shown_days = int(days) if str(days).isdigit() and 1 <= int(days) <= 365 else 30
+    ts.payment_days = str(int(st.number_input("Payment due within (working days)", min_value=1, max_value=365, step=1,
+                                              value=shown_days, key=f"pay_days_{v}")))
 
     st.subheader("Payment installments")
     st.caption("Add or remove installments.")
@@ -109,6 +128,11 @@ def render():
     c1, c2 = st.columns(2)
     ts.start_date = c1.text_input("Start date", ts.start_date)
     ts.completion_date = c2.text_input("Completion date", ts.completion_date)
+
+    st.subheader("Contract documents")
+    ts.attachment_no = st.text_input("Attachment no. that yields to the Agreement", ts.attachment_no, key=f"attach_{v}",
+                                     help="The attachments clause says that if the Agreement and this attachment differ, "
+                                          "the Agreement prevails.")
 
     st.subheader("Limits")
     st.caption("Caps written into the contract. Tick \"No cap\" to take a cap out of the wording.")
@@ -142,4 +166,7 @@ def render():
     missing = [f for f in REQUIRED_FIELDS if not getattr(ts, f)]
     if missing:
         st.warning(f"Required before continuing: {', '.join(missing)}")
-    st.button("Continue \u2192", disabled=bool(missing), type="primary", on_click=flow.go_next)
+    if st.button("Continue \u2192", disabled=bool(missing), type="primary", key="term_continue"):
+        term_check.run_check(ts)
+        flow.go_next()
+        st.rerun()

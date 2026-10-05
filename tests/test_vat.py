@@ -59,7 +59,9 @@ def test_only_the_price_clause_changes():
     plain = {c.key: [i.text for i in c.items] for c in library_for({})}
     filled = {c.key: [i.text for i in c.items] for c in library_for({}, None, None, TermSheet(vat_treatment="exclusive"))}
     assert [k for k in plain if plain[k] != filled[k]] == ["price_payment"]
-    assert [i for i, (a, b) in enumerate(zip(plain["price_payment"], filled["price_payment"])) if a != b] == [0]
+    # the price sentence (VAT) and, since payment days now default to 30, the payment sentence; nothing else in that clause
+    assert [i for i, (a, b) in enumerate(zip(plain["price_payment"], filled["price_payment"])) if a != b] == [0, 2]
+    assert "exclusive of VAT" in filled["price_payment"][0] and "30 (thirty) working days" in filled["price_payment"][2]
 
 
 def test_fill_template_is_idempotent_and_leaves_drafted_clauses_alone():

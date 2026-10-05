@@ -18,13 +18,17 @@ class TermSheet:
     capacity_unit: str = "kWp"      # "kWp" or "MW"
     contract_no: str = ""
     contract_date: str = ""
+    signing_place_choice: str = ""     # "owner" | "contractor" | "other" | "" -- the place is read from the address chosen
+    signing_place_other: str = ""
 
     owner_name: str = ""
+    owner_country: str = ""
     owner_reg_no: str = ""
     owner_signatory: str = ""
     owner_address: str = ""
 
     contractor_name: str = ""
+    contractor_country: str = "Thailand"
     contractor_reg_no: str = ""
     contractor_signatory: str = ""
     contractor_address: str = ""
@@ -34,7 +38,10 @@ class TermSheet:
     contract_price_number: str = ""
     contract_price_words: str = ""
     vat_treatment: str = ""
+    payment_days: str = "30"           # working days the Owner has to pay an installment
     installments: list = field(default_factory=list)  # list[Installment] -- variable length
+
+    attachment_no: str = ""            # the attachment that yields to the Agreement if they differ
 
     start_date: str = ""
     completion_date: str = ""
@@ -57,3 +64,21 @@ REQUIRED_FIELDS = [
     "project_name", "project_location", "capacity", "owner_name", "contractor_name",
     "contract_price_number", "start_date", "completion_date",
 ]
+
+NEW_FIELD_DEFAULTS = {"owner_country": "", "contractor_country": "Thailand", "signing_place_choice": "",
+                      "signing_place_other": "", "payment_days": "30", "attachment_no": ""}
+
+
+def ensure_fields(term_sheet):
+    """Gives a term sheet object saved by an older version of the app the fields added since."""
+    for name, default in NEW_FIELD_DEFAULTS.items():
+        if not hasattr(term_sheet, name):
+            setattr(term_sheet, name, default)
+    return term_sheet
+
+
+def signing_place(term_sheet):
+    """The place of signing as text: the address of the party chosen, or the place typed. Empty if none."""
+    choice = getattr(term_sheet, "signing_place_choice", "")
+    source = {"owner": "owner_address", "contractor": "contractor_address", "other": "signing_place_other"}.get(choice)
+    return (getattr(term_sheet, source, "") or "").strip() if source else ""
