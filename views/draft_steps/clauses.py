@@ -99,7 +99,7 @@ def checked_problem(d, text):
 
 def default_tick(d):
     """Apply is ticked at the start only when there is wording and the checks have nothing to say."""
-    return d.evidence_verified and applicable(d) and (bool(d.new_text) or d.removes) and not d.rewrite_problem
+    return d.evidence_verified and applicable(d) and bool(d.new_text) and not d.rewrite_problem and not d.removes
 
 
 def show_lines(lines):
@@ -281,11 +281,18 @@ def undo_reject(msg, key):
 
 
 def content_for_model(msg):
-    """What the model reads for a message. A reply's rejections are added so that it does not propose them again."""
-    rejected = msg.get("rejected") or {}
-    if not rejected:
-        return msg["content"]
-    return msg["content"] + "\n" + "\n".join(f"The user rejected: {label}." for label in rejected.values())
+    """What the model reads for a message. A reply's rejections and what was applied are added, so that it does not propose them again."""
+    lines = [msg["content"]]
+    lines += [f"The user rejected: {label}." for label in (msg.get("rejected") or {}).values()]
+    for e in msg.get("applied_entries") or []:
+        what = e["heading"] if e["kind"] == "clause" else f"wording change in {e['heading']}: {e['requested_change']}"
+        lines.append(f"Applied to the draft: {what} (the user's words: \u201c{e['evidence']}\u201d). This request is done.")
+    return "\n".join(lines)
+
+
+def applied_entries_now():
+    """What was applied in this run and is still in the draft (see core.interpret settle)."""
+    return [e for batch in st.session_state.get(APPLIED_KEY, []) for e in batch["entries"] if still_applied(e)]
 
 
 def apply_proposals(msg):
@@ -330,6 +337,7 @@ def apply_proposals(msg):
     st.session_state[DEVIATIONS_KEY] = chosen
     msg["applied"] = applied
     msg["undo"] = undo
+    msg["applied_entries"] = entries
     if entries:
         log = st.session_state.setdefault(APPLIED_KEY, [])
         batch = {"id": max((b["id"] for b in log), default=0) + 1, "entries": entries}
@@ -355,6 +363,7 @@ def undo_apply(msg):
     st.session_state[DEVIATIONS_KEY] = undo.get("deviations") or []
     st.session_state[APPLIED_KEY] = [b for b in st.session_state.get(APPLIED_KEY, []) if b["id"] != undo.get("batch")]
     msg["applied"] = None
+    msg.pop("applied_entries", None)
 
 
 def write_wording_change(d, text, undo=None, removing=False):
@@ -743,7 +752,7 @@ def render():
                     result = interpret_request(
                         ts, interpret_library, CountingClient(client, calls, STEP_NAME), MODEL,
                         [{"role": m["role"], "content": content_for_model(m)} for m in chat],
-                        pending_deviations(chat[:-1] if text else chat), wording_state.applied())
+                        pending_deviations(chat[:-1] if text else chat), wording_state.applied(), applied_entries_now())
                 except InterpretationError as e:
                     error = str(e)
                 except Exception as e:

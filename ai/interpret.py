@@ -15,7 +15,7 @@ from core.clause_params import limits_of, limits_text
 import re
 
 from core.conditions import condition_lines, strip_condition_prefix
-from core.figures import numbers_in
+from core.figures import numbers_in, target_figures
 
 
 class InterpretationError(Exception):
@@ -101,6 +101,10 @@ found in that clause. "evidence" is copied verbatim from the text after the colo
 clause that is currently excluded from the draft means the user wants that clause: output an include action for it \
 (basis "term_sheet") as well as any deviation on its wording.
 
+Lines of your earlier replies that start with "Applied to the draft:" are requests that are done: they are already in \
+the clause text you are given. Never list them again, in any list and never as a question, even though the user's \
+earlier message still asks for it. Only a new request from the user about the same provision is new.
+
 The conversation lists the user's messages and your earlier replies. Treat all of the user's messages \
 together as the request, and produce the complete current result every time, not only what is new. \
 Your earlier replies only record what was already proposed or asked. If the user answered a question \
@@ -115,7 +119,9 @@ Output five lists.
    - "exclude": the user asks to drop, remove or omit the subject matter of a clause that is currently \
 included in the draft, and the request covers the clause's whole subject.
    - "include": a clause that is currently excluded from the draft (usually an optional clause) that the \
-user asks for.
+user asks for. Use it only when the user names that clause's own subject, the main words of its title (for example \
+"owner's representations"). A new clause that merely shares one word with an optional clause, for example "a warranty \
+clause" and "Owner's Representations and Warranties", is NOT that clause: put it in unmapped_requests.
    - Never output an action that matches a clause's current state.
    - Never include a clause because of a term sheet fact: that is a suggestion (list 5), not an action.
 
@@ -288,10 +294,14 @@ GENERIC_WORDS = {"the", "a", "an", "of", "to", "for", "in", "on", "and", "or", "
 
 
 def _stem(word):
+    """A crude stem, the same for the singular and the plural ("damage", "damages"; "warranty", "warranties")."""
+    if word.endswith("ies") and len(word) > 5:
+        return word[:-3] + "y"
     for suffix in ("ings", "ing", "ed", "es", "s"):
         if word.endswith(suffix) and len(word) - len(suffix) >= 3:
-            return word[:-len(suffix)]
-    return word
+            word = word[:-len(suffix)]
+            break
+    return word[:-1] if len(word) > 4 and word.endswith("e") else word
 
 
 def _stems(text):
@@ -344,6 +354,17 @@ def validate(raw, library, haystack, assistant_text=""):
         if (action == "exclude" and not clause.included) or (action == "include" and clause.included):
             out.notes.append(f"Dropped '{action}' on '{clause.title}': already in that state.")
             continue
+        said_no = action == "include" and "did not mean" in _norm(a.get("evidence", ""))
+        if said_no or (action == "include" and a.get("basis", "comment") == "comment" and not _names_clause(a.get("evidence", ""), clause)):
+            if said_no:
+                out.notes.append(f"Dropped adding '{clause.title}': the user said it was not what they meant.")
+            else:                                          # a clause that only shares a word with the request is a question, never an action
+                out.unmapped_requests.append(UnmappedRequest(
+                    a.get("evidence", "") or a.get("reason", ""), a.get("evidence", ""), verified(a.get("evidence", "")), key,
+                    clause.items[0].text if clause.items else clause.title, a.get("reason", "").strip() or "The title shares a word with your request.",
+                    f"Add the '{clause.title}' clause"))
+                out.notes.append(f"Turned adding '{clause.title}' into a question: the request does not name that clause.")
+            continue
         seen.add(key)
         out.clause_actions.append(ClauseAction(
             key, action, a.get("reason", ""), a.get("basis", "comment"),
@@ -389,10 +410,12 @@ def validate(raw, library, haystack, assistant_text=""):
                              "the provision it refers to is not in that clause.")
             continue
         clause = by_key[key]
+        user_confirmed = False
         if change_type != "add":
             term_match = d.get("term_match", "same_term")
             asked = f"'{clause.title}'" in assistant_text and "Question:" in assistant_text
-            confirmed = (term_match == "confirmed_by_user" and asked) or _from_condition(d.get("evidence", ""), key, from_conditions)
+            user_confirmed = term_match == "confirmed_by_user" and asked
+            confirmed = user_confirmed or _from_condition(d.get("evidence", ""), key, from_conditions)
             if not confirmed and (term_match == "different_term"
                                   or not _term_in_clause(d.get("request_term", ""), clause)):
                 out.unmapped_requests.append(UnmappedRequest(
@@ -409,8 +432,42 @@ def validate(raw, library, haystack, assistant_text=""):
         if _attach_rewrite(deviation, clause, d):
             out.notes.append(f"Dropped a wording change on '{clause.title}': it already has that wording.")
             continue
+        if deviation.old_text and deviation.evidence_verified and not user_confirmed and not _request_matches_unit(deviation):
+            out.unmapped_requests.append(UnmappedRequest(                 # the model picked a provision the request is not about
+                deviation.requested_change or deviation.summary, deviation.evidence, True, key, deviation.old_text,
+                "The words of your request are not in this provision.", deviation.requested_change))
+            out.notes.append(f"Turned a wording change on '{clause.title}' into a question: the provision does not contain the words of the request.")
+            continue
         out.deviations.append(deviation)
     return out
+
+
+_REQUEST_WORDS = {"remove", "delete", "drop", "exclude", "omit", "take", "out", "change", "modify", "amend", "reduce", "increase", "decrease",
+                  "lower", "raise", "add", "make", "set", "update", "replace", "shorten", "extend", "yes", "meant", "mean", "did", "not",
+                  "please", "should", "would", "want", "need", "like", "client", "user", "wants", "section", "wording", "text", "sentence",
+                  "point", "item", "this", "that", "from", "into", "all", "also", "just", "only", "other", "than", "more", "less", "new",
+                  "old", "per", "its", "our", "your", "their", "have", "has", "can", "will", "must", "too", "very", "one", "two"}
+
+
+def _content_stems(text):
+    """The words of a text that say what it is about: no short words, no filler, no instruction words."""
+    ignore = {_stem(w) for w in GENERIC_WORDS | _REQUEST_WORDS}
+    return {s for s in (_stem(w) for w in re.findall(r"[a-z]+", (text or "").lower()) if len(w) > 2) if s not in ignore}
+
+
+def _request_matches_unit(deviation):
+    """True when a word the user used to say what to change is in the sentence or point that is to be changed. A request with no such
+    word (only instruction words and figures) cannot be checked and passes."""
+    words = _content_stems(deviation.evidence)
+    return not words or bool(words & _content_stems(deviation.old_text))
+
+
+def _names_clause(evidence, clause):
+    """True when the user's words name the clause's own subject: at least half of the main words of its title. Without evidence there
+    is nothing to compare, so it passes."""
+    wanted = _content_stems(clause.title) - {_stem("optional")}
+    said = _content_stems(strip_condition_prefix(evidence))
+    return not wanted or not said or len(wanted & said) / len(wanted) >= 0.5
 
 
 _NOT_TEXT = {"new_text", "provision_quote", "candidate_provision_quote", "clause_key", "candidate_clause_key", "action", "change_type",
@@ -488,6 +545,9 @@ def _attach_rewrite(deviation, clause, raw):
     """Finds the sentence the change is made on and checks the AI's new wording for it. The deviation gets `new_text`, or
     `rewrite_problem` saying why not. True when the clause already says what was asked (nothing to change)."""
     request_text = f"{raw.get('requested_change', '')} {raw.get('evidence', '')}"
+    user_words = raw.get("evidence", "") or ""
+    target = target_figures(user_words) if numbers_in(user_words) else target_figures(request_text)
+    figure_text = user_words if numbers_in(user_words) else request_text       # the user's own figures, not the model's "from X to Y"
     new = wording.norm(raw.get("new_text") or "")
     if deviation.change_type == "add":
         if new and any(wording.norm(text).lower() == new.lower() for _, text in wording.units(clause)):
@@ -505,14 +565,16 @@ def _attach_rewrite(deviation, clause, raw):
             else:
                 deviation.removes = True                       # whatever the AI wrote as new text, the whole unit goes
             return False
+        if deviation.change_type == "modify" and target and target <= numbers_in(deviation.provision_quote):
+            return True                                        # the provision the model points at already has the figure asked for
         if new and new.lower() == deviation.old_text.lower():
-            if numbers_in(request_text) and numbers_in(request_text) <= numbers_in(deviation.old_text):
-                return True                                    # the sentence already has the figures asked for
-            if not _repair(deviation, "", request_text):
+            if target and target <= numbers_in(deviation.old_text):
+                return True                                    # the sentence already has the figure asked for
+            if not _repair(deviation, "", figure_text):
                 deviation.rewrite_problem = "The AI gave back the sentence unchanged."      # no new wording: the user writes it
             return False
         reason = wording.check_rewrite(deviation.old_text, new, deviation.change_type, deviation.provision_quote, request_text)
-        if reason and _repair(deviation, new, request_text):
+        if reason and _repair(deviation, new, figure_text):
             reason = ""
     if reason:
         deviation.rewrite_problem = reason
@@ -575,14 +637,41 @@ def _unit_texts(clause):
     return {wording.norm(text).lower() for _, text in wording.units(clause)}
 
 
-def settle(result, library, pending=(), applied_edits=()):
+def _same_request(a, b):
+    """True when two pieces of the user's own words are the same request: equal, or one inside the other (the longer may be a
+    "Yes, by ... I meant ..." answer that quotes the request)."""
+    a, b = _norm(strip_condition_prefix(a)), _norm(strip_condition_prefix(b))
+    if not a or not b:
+        return False
+    shorter, longer = sorted((a, b), key=len)
+    return a == b or (len(shorter) >= 8 and shorter in longer)
+
+
+def settle(result, library, pending=(), applied_edits=(), applied_entries=()):
     """Keeps the picture stable from one reply to the next, in code, whatever the model re-lists.
     `pending` are the wording changes an earlier reply proposed that the user has neither applied nor rejected: they stay
     in the result unless this reply replaces them (a change to the same sentence) or the user asked for different figures,
     or the sentence is no longer there. A question the model raises about a change that is already in the draft (an edit in
     `applied_edits` with those figures), or about one that is still pending, is dropped: it was answered by the proposal.
+    `applied_entries` are the requests the user has already applied and that are still in the draft (kind, key, evidence): whatever
+    the model lists again for the same words, in any list, is dropped, so an applied request is never proposed a second time.
     Mutates and returns `result`."""
     by_key = {c.key: c for c in library}
+
+    def done(evidence, key=None):
+        return any(_same_request(evidence, e["evidence"]) and (key is None or e["key"] == key) for e in applied_entries)
+
+    if applied_entries:
+        for name, key_of, text_of in (("deviations", lambda x: x.clause_key, lambda x: x.evidence),
+                                      ("clause_actions", lambda x: x.clause_key, lambda x: x.evidence),
+                                      ("unmapped_requests", lambda x: None, lambda x: x.evidence or x.request)):
+            keep = []
+            for item in getattr(result, name):
+                if done(text_of(item), key_of(item)):
+                    result.notes.append("Dropped a request that is already applied to the draft.")
+                else:
+                    keep.append(item)
+            setattr(result, name, keep)
 
     def figures(u):
         return numbers_in(f"{u.request} {u.evidence} {u.candidate_change}")
@@ -630,7 +719,7 @@ def settle(result, library, pending=(), applied_edits=()):
     return result
 
 
-def interpret_request(ts, library, client, model=MODEL, conversation=None, pending=(), applied_edits=()):
+def interpret_request(ts, library, client, model=MODEL, conversation=None, pending=(), applied_edits=(), applied_entries=()):
     """AI call 1. `conversation` is a list of {"role": "user" | "assistant", "content": str}.
     `client` is any object exposing the OpenAI chat.completions interface. `pending` and `applied_edits` keep the result
     steady between replies (see `settle`)."""
@@ -664,7 +753,7 @@ def interpret_request(ts, library, client, model=MODEL, conversation=None, pendi
     assistant_text = "\n".join(m["content"] for m in conversation if m["role"] == "assistant")
     result = validate(raw, library, "\n".join([term_sheet_text(ts), user_text]), assistant_text)
     result = drop_roof_owner_false_alarm(result, ts)
-    return settle(result, library, pending, applied_edits)
+    return settle(result, library, pending, applied_edits, applied_entries)
 
 
 def resolve_included(library, accepted_actions):

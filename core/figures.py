@@ -9,6 +9,17 @@ _WORDS.update({"twenty": 20, "thirty": 30, "forty": 40, "fifty": 50, "sixty": 60
 _TENS = {w for w, v in _WORDS.items() if v in range(20, 100)}
 
 
+def target_figures(text):
+    """The figure a request moves TO, not the one it moves from: "from 0.05% to 0.03%" -> {0.03}, "reduce it to 15 days" -> {15}.
+    Without a "to <figure>" it is every figure in the text ("make it 15 days" -> {15})."""
+    text = text or ""
+    for m in reversed(list(re.finditer(r"\b(?:to|into)\b", text, re.IGNORECASE))):
+        figures = numbers_in(text[m.end():])                # everything after the last "to": two figures there stay two
+        if figures:
+            return figures
+    return numbers_in(text)
+
+
 def numbers_in(text):
     """'two-year' -> {2}, 'twenty-five' -> {20, 5, 25}, '7 days' -> {7}."""
     tokens = re.findall(r"[a-z]+|\d+(?:\.\d+)?", text.lower())

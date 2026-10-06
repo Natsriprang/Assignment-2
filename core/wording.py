@@ -11,7 +11,7 @@ from decimal import Decimal, InvalidOperation
 
 from core.clause_params import format_number, int_words, number_words
 from core.clauses import Item
-from core.figures import numbers_in
+from core.figures import numbers_in, target_figures
 
 KEEP_MODIFY = 0.6          # share of the old sentence's words that must survive a modify
 KEEP_REMOVE = 0.3          # ... and a remove_part (which removes some of them on purpose)
@@ -265,7 +265,7 @@ def figure_swap(old, quote, request_text):
         return ""
     old_n = norm(old)
     pairs = [m for m in _PAIR.finditer(old_n) if m.start() >= span[0] and m.end() <= span[1]]
-    new_figures = numbers_in(request_text) - numbers_in(old_n)
+    new_figures = target_figures(request_text) - numbers_in(old_n)
     if len(pairs) != 1 or len(new_figures) != 1:
         return ""
     value = next(iter(new_figures))
