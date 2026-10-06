@@ -20,7 +20,7 @@ def build_library():
                    "materials and equipment, and labour (BOQ); (3) Quotation; (4) Scope of work; "
                    "(5) Project Schedule; (6) Term of Reference (TOR).",
                    "In the event of any discrepancy between the provisions of this Agreement and "
-                   "Attachment [*], the provisions of this Agreement shall prevail.",
+                   "Attachment, the provisions of this Agreement shall prevail.",
                ], category="general"),
 
         Clause("price_payment", "Contract Price and Terms of Payment",
