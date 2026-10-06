@@ -98,8 +98,9 @@ chose the clause by writing the condition in that clause's box, so the link to t
 term_match to "confirmed_by_user" and do not ask which clause is meant; ask only when the provision to change cannot be \
 found in that clause. "evidence" is copied verbatim from the text after the colon, never including the words \
 "additional condition for clause key ...". One condition may hold several requests; handle each separately. A condition on a \
-clause that is currently excluded from the draft means the user wants that clause: output an include action for it \
-(basis "term_sheet") as well as any deviation on its wording.
+clause that is currently excluded from the draft, and is an optional clause, means the user may want that clause: put \
+a suggestion for it in list 5. The term sheet lines for installments, and every other term sheet value, are filled into \
+the contract by the system: they are never requests to change a clause.
 
 Lines of your earlier replies that start with "Applied to the draft:" are requests that are done: they are already in \
 the clause text you are given. Never list them again, in any list and never as a question, even though the user's \
@@ -118,10 +119,11 @@ Output five lists.
 1. clause_actions -- add or remove a WHOLE clause.
    - "exclude": the user asks to drop, remove or omit the subject matter of a clause that is currently \
 included in the draft, and the request covers the clause's whole subject.
-   - "include": a clause that is currently excluded from the draft (usually an optional clause) that the \
-user asks for. Use it only when the user names that clause's own subject, the main words of its title (for example \
-"owner's representations"). A new clause that merely shares one word with an optional clause, for example "a warranty \
-clause" and "Owner's Representations and Warranties", is NOT that clause: put it in unmapped_requests.
+   - "include": a standard clause that is currently excluded from the draft, which the user asks to have back. Never use \
+it for an optional clause (marked "optional clause" in the library): the user ticks optional clauses by hand, so for an \
+optional clause whose own subject the user names (the main words of its title, for example "owner's representations") \
+put a suggestion in list 5 instead. A new clause that merely shares one word with an optional clause, for example "a \
+warranty clause" and "Owner's Representations and Warranties", is NOT that clause: put it in unmapped_requests.
    - Never output an action that matches a clause's current state.
    - Never include a clause because of a term sheet fact: that is a suggestion (list 5), not an action.
 
@@ -172,11 +174,12 @@ the other candidate fields to empty strings. If an earlier reply of yours alread
 covered by the clause library", reuse exactly the same wording for "request" and the same "evidence", so the \
 user sees one stable list instead of rephrased copies.
 
-5. suggestions -- a clause the user did not ask for but may want. Only one case: if roof_owner is filled in and is \
-clearly a different party from the Owner (a different legal entity, not an abbreviation or spelling variant of the \
-Owner's name), suggest owner_representations. Never include it and never write its text: the user decides by ticking \
-the optional clause. "reason" is one short sentence naming both parties, and "evidence" is copied verbatim from the \
-roof_owner line of the term sheet. Compare roof_owner with owner_name yourself, word by word: when they name the same \
+5. suggestions -- an optional clause the user may want, which you never add yourself and whose text you never write: \
+the user decides by ticking it. Two cases only: (a) roof_owner is filled in and is clearly a different party from the \
+Owner (a different legal entity, not an abbreviation or spelling variant of the Owner's name): suggest \
+owner_representations; (b) the user's words name an optional clause's own subject, or a term sheet line writes an \
+additional condition for that clause: suggest it. "reason" is one short sentence (for case (a) naming both parties), \
+and "evidence" is copied verbatim from the user's words or the term sheet line. Compare roof_owner with owner_name yourself, word by word: when they name the same \
 party (the same words, or differing only in case, spacing, "The" or a company suffix such as Co., Ltd.), or roof_owner \
 is blank, return no suggestion.
 
@@ -230,7 +233,9 @@ def clause_digest(library):
     return "\n\n".join(blocks)
 
 
-def term_sheet_text(ts):
+def term_sheet_text(ts, for_model=False):
+    """The term sheet as text. `for_model` leaves out the installment rows: the system writes them into the payment table, so they are
+    not something the model can be asked to change (it read their supporting documents as requests to add conditions)."""
     lines = []
     for name in ts.__dataclass_fields__:
         if name in ("installments", "limits", "additional_conditions"):
@@ -238,7 +243,7 @@ def term_sheet_text(ts):
         value = getattr(ts, name)
         if value:
             lines.append(f"{name}: {value}")
-    for inst in ts.installments:
+    for inst in ([] if for_model else ts.installments):
         if inst.percent or inst.condition or inst.required_docs:
             lines.append(f"installment {inst.number}: {inst.percent}% | {inst.condition} | {inst.required_docs}")
     lines.append(f"limits: {limits_text(limits_of(ts))}")
@@ -342,7 +347,7 @@ def validate(raw, library, haystack, assistant_text=""):
         out.ambiguities.append(
             f"The input both includes and excludes '{by_key[key].title}'; no change was applied to it.")
 
-    seen = set()
+    seen, suggested_keys = set(), set()
     for a in raw.get("clause_actions", []):
         key, action = a.get("clause_key"), a.get("action")
         if key not in by_key or by_key[key].category == "drafted":
@@ -355,7 +360,16 @@ def validate(raw, library, haystack, assistant_text=""):
             out.notes.append(f"Dropped '{action}' on '{clause.title}': already in that state.")
             continue
         said_no = action == "include" and "did not mean" in _norm(a.get("evidence", ""))
-        if said_no or (action == "include" and a.get("basis", "comment") == "comment" and not _names_clause(a.get("evidence", ""), clause)):
+        roof_rule = a.get("basis") == "term_sheet" and "roof" in a.get("evidence", "").lower()      # the roof owner rule: judged by drop_roof_owner_false_alarm
+        named = _names_clause(a.get("evidence", ""), clause) or _from_condition(a.get("evidence", ""), key, from_conditions) or roof_rule
+        if action == "include" and clause.optional and named and not said_no:
+            if key not in suggested_keys:                  # the user ticks an optional clause by hand: the model only suggests it
+                suggested_keys.add(key)
+                out.suggestions.append(Suggestion(key, a.get("reason", "").strip() or "Your words name this clause.", a.get("evidence", ""),
+                                                  verified(a.get("evidence", ""))))
+                out.notes.append(f"Turned adding '{clause.title}' into a suggestion: you decide by ticking it.")
+            continue
+        if said_no or (action == "include" and not named):
             if said_no:
                 out.notes.append(f"Dropped adding '{clause.title}': the user said it was not what they meant.")
             else:                                          # a clause that only shares a word with the request is a question, never an action
@@ -370,7 +384,7 @@ def validate(raw, library, haystack, assistant_text=""):
             key, action, a.get("reason", ""), a.get("basis", "comment"),
             a.get("evidence", ""), verified(a.get("evidence", ""))))
 
-    suggested = set()
+    suggested = set(suggested_keys)
     for s in raw.get("suggestions", []):
         key, reason = s.get("clause_key"), (s.get("reason") or "").strip()
         clause = by_key.get(key)
@@ -401,7 +415,7 @@ def validate(raw, library, haystack, assistant_text=""):
             out.notes.append(f"Dropped a deviation on unknown clause '{key}'.")
             continue
         change_type = d.get("change_type", "modify")
-        quote = d.get("provision_quote", "")
+        quote = _tidy_quote(d.get("provision_quote", ""), clause_text(by_key[key]))
         if change_type != "add" and not (_norm(quote) and _norm(quote) in _norm(clause_text(by_key[key]))):
             out.unmapped_requests.append(UnmappedRequest(
                 f"{d.get('requested_change', '')} (no matching provision found in "
@@ -468,6 +482,15 @@ def _names_clause(evidence, clause):
     wanted = _content_stems(clause.title) - {_stem("optional")}
     said = _content_stems(strip_condition_prefix(evidence))
     return not wanted or not said or len(wanted & said) / len(wanted) >= 0.5
+
+
+def _tidy_quote(quote, text):
+    """The quote as the clause has it: when it is not in the text but is once the punctuation or quotation marks at its ends are taken off,
+    that is the quote ("action." for "action; or")."""
+    if _norm(quote) in _norm(text):
+        return quote
+    stripped = _norm(quote).strip(wording._EDGE)
+    return stripped if stripped and stripped in _norm(text) else quote
 
 
 _NOT_TEXT = {"new_text", "provision_quote", "candidate_provision_quote", "clause_key", "candidate_clause_key", "action", "change_type",
@@ -556,7 +579,9 @@ def _attach_rewrite(deviation, clause, raw):
     else:
         found = wording.find_unit(clause, deviation.provision_quote)
         if found is None:
-            deviation.rewrite_problem = "I could not tell which single sentence the change applies to."
+            hits = wording.unit_hits(clause, deviation.provision_quote)
+            deviation.rewrite_problem = ("That wording is in more than one place in the clause." if hits > 1
+                                         else "That wording runs across more than one sentence or point.")
             return False
         deviation.old_text = wording.norm(found[1])
         if deviation.change_type == "remove_part" and wording.removable(found[0]) and wording.removal_of(found[1], deviation.provision_quote):
@@ -599,6 +624,19 @@ def _repair(deviation, new, request_text):
     return False
 
 
+def forget_unknown_clauses(result, library):
+    """A reply may name a clause the draft no longer has (a clause the AI drafted and the user rejected since): a change or a suggestion
+    for it is dropped, and a request that had it as its candidate becomes a plain request."""
+    known = {c.key for c in library}
+    result.clause_actions = [a for a in result.clause_actions if a.clause_key in known]
+    result.deviations = [d for d in result.deviations if d.clause_key in known]
+    result.suggestions = [s for s in result.suggestions if s.clause_key in known]
+    for u in result.unmapped_requests:
+        if u.candidate_key and u.candidate_key not in known:
+            u.candidate_key = u.candidate_quote = u.why_related = u.candidate_change = ""
+    return result
+
+
 def candidate_question(item, title):
     """The question put to the user about a candidate provision."""
     return (f"You wrote \u201c{item.evidence or item.request}\u201d. No clause uses that term. "
@@ -637,17 +675,24 @@ def _unit_texts(clause):
     return {wording.norm(text).lower() for _, text in wording.units(clause)}
 
 
-def _same_request(a, b):
-    """True when two pieces of the user's own words are the same request: equal, or one inside the other (the longer may be a
-    "Yes, by ... I meant ..." answer that quotes the request)."""
-    a, b = _norm(strip_condition_prefix(a)), _norm(strip_condition_prefix(b))
-    if not a or not b:
+_QUICK_REPLY = re.compile(r"^(?:yes|no),? by [\u201c\"].*[\u201d\"] i (?:meant|did not mean)")
+
+
+def _same_request(new, stored):
+    """True when `new` (the user's words in what the model lists now) is the request recorded in `stored` (the user's words when it
+    was applied): equal, or `new` is a piece of `stored` (the stored words may be a "Yes, by ... I meant ..." answer), or `new` is
+    such an answer that quotes `stored`. A later message that merely contains the stored words and asks for more is a new request."""
+    new, stored = _norm(strip_condition_prefix(new)), _norm(strip_condition_prefix(stored))
+    if not new or not stored:
         return False
-    shorter, longer = sorted((a, b), key=len)
-    return a == b or (len(shorter) >= 8 and shorter in longer)
+    if new == stored:
+        return True
+    if len(new) >= 8 and new in stored:
+        return True
+    return len(stored) >= 8 and stored in new and bool(_QUICK_REPLY.match(new))
 
 
-def settle(result, library, pending=(), applied_edits=(), applied_entries=()):
+def settle(result, library, pending=(), applied_edits=(), applied_entries=(), declined=()):
     """Keeps the picture stable from one reply to the next, in code, whatever the model re-lists.
     `pending` are the wording changes an earlier reply proposed that the user has neither applied nor rejected: they stay
     in the result unless this reply replaces them (a change to the same sentence) or the user asked for different figures,
@@ -655,6 +700,8 @@ def settle(result, library, pending=(), applied_edits=(), applied_entries=()):
     `applied_edits` with those figures), or about one that is still pending, is dropped: it was answered by the proposal.
     `applied_entries` are the requests the user has already applied and that are still in the draft (kind, key, evidence): whatever
     the model lists again for the same words, in any list, is dropped, so an applied request is never proposed a second time.
+    `declined` are the links the user refused ("No, by X I did not mean the Y clause": {"key": Y, "evidence": X}): the model is not
+    allowed to link X to Y again, whatever it lists later. The request itself is kept, as a request without a candidate clause.
     Mutates and returns `result`."""
     by_key = {c.key: c for c in library}
 
@@ -677,6 +724,37 @@ def settle(result, library, pending=(), applied_edits=(), applied_entries=()):
         return numbers_in(f"{u.request} {u.evidence} {u.candidate_change}")
 
     gone = [e for e in applied_edits if e.get("change_type") == "remove"]
+    if declined:
+        def refused(key, evidence):
+            return any(d["key"] == key and _same_request(evidence, d["evidence"]) for d in declined)
+
+        plain_requests = []
+        keep_actions = []
+        for a in result.clause_actions:
+            if a.action == "include" and refused(a.clause_key, a.evidence):
+                plain_requests.append(UnmappedRequest(a.evidence or a.reason, a.evidence, a.evidence_verified))
+                result.notes.append("Turned adding a clause the user had refused into a request for a new clause.")
+            else:
+                keep_actions.append(a)
+        result.clause_actions = keep_actions
+        keep_deviations = []
+        for d in result.deviations:
+            if refused(d.clause_key, d.evidence):
+                plain_requests.append(UnmappedRequest(d.requested_change or d.summary, d.evidence, d.evidence_verified))
+                result.notes.append("Turned a change to a clause the user had refused into a request.")
+            else:
+                keep_deviations.append(d)
+        result.deviations = keep_deviations
+        for u in result.unmapped_requests:
+            if u.candidate_key and refused(u.candidate_key, u.evidence or u.request):
+                u.candidate_key = u.candidate_quote = u.why_related = u.candidate_change = ""
+                result.notes.append("Took away a candidate clause the user had refused.")
+        seen = {_norm(u.request).lower() for u in result.unmapped_requests}
+        for u in plain_requests:
+            if _norm(u.request).lower() not in seen:
+                seen.add(_norm(u.request).lower())
+                result.unmapped_requests.append(u)
+
     kept = []
     for u in result.unmapped_requests:
         if gone and any(_stems(e["old"]) - {_stem(w) for w in GENERIC_WORDS} and
@@ -719,7 +797,7 @@ def settle(result, library, pending=(), applied_edits=(), applied_entries=()):
     return result
 
 
-def interpret_request(ts, library, client, model=MODEL, conversation=None, pending=(), applied_edits=(), applied_entries=()):
+def interpret_request(ts, library, client, model=MODEL, conversation=None, pending=(), applied_edits=(), applied_entries=(), declined=()):
     """AI call 1. `conversation` is a list of {"role": "user" | "assistant", "content": str}.
     `client` is any object exposing the OpenAI chat.completions interface. `pending` and `applied_edits` keep the result
     steady between replies (see `settle`)."""
@@ -728,7 +806,7 @@ def interpret_request(ts, library, client, model=MODEL, conversation=None, pendi
                            for m in conversation) or "(no messages)"
     user_message = (
         f"<clause_library>\n{clause_digest(library)}\n</clause_library>\n\n"
-        f"<term_sheet>\n{term_sheet_text(ts)}\n</term_sheet>\n\n"
+        f"<term_sheet>\n{term_sheet_text(ts, for_model=True)}\n</term_sheet>\n\n"
         f"<conversation>\n{transcript}\n</conversation>"
     )
     response = client.chat.completions.create(
@@ -751,9 +829,9 @@ def interpret_request(ts, library, client, model=MODEL, conversation=None, pendi
 
     user_text = "\n".join(m["content"] for m in conversation if m["role"] == "user")
     assistant_text = "\n".join(m["content"] for m in conversation if m["role"] == "assistant")
-    result = validate(raw, library, "\n".join([term_sheet_text(ts), user_text]), assistant_text)
+    result = validate(raw, library, "\n".join([term_sheet_text(ts, for_model=True), user_text]), assistant_text)
     result = drop_roof_owner_false_alarm(result, ts)
-    return settle(result, library, pending, applied_edits, applied_entries)
+    return settle(result, library, pending, applied_edits, applied_entries, declined)
 
 
 def resolve_included(library, accepted_actions):

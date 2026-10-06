@@ -17,6 +17,7 @@ KEEP_MODIFY = 0.6          # share of the old sentence's words that must survive
 KEEP_REMOVE = 0.3          # ... and a remove_part (which removes some of them on purpose)
 MARGIN_WORDS = 2           # words around the quoted text that a rewrite may also touch (a/an, plural, a joining word)
 MAX_LENGTH = 700           # characters in a new sentence
+MOSTLY_NEW = 0.7           # above this share of changed words the new wording is shown plain
 
 _FIGURE_WITH_WORDS = re.compile(r"(\d+(?:\.\d+)?)\s*%?\s*\(([A-Za-z][A-Za-z \-]*)\)")
 _PAIR = re.compile(r"(\d+(?:\.\d+)?)(\s*%?\s*)\(([A-Za-z][A-Za-z \-]*)\)")        # "0.05 (zero point zero five)", "5% (five percent)"
@@ -39,13 +40,29 @@ def units(clause):
     return out
 
 
+_EDGE = " \t\n.,;:\u201c\u201d\"'\u2018\u2019"
+_SPECIFIC = {"lettered": 0, "cell": 0, "item": 1, "paragraph": 1}          # a lettered point is more specific than the sentence it is part of
+
+
 def find_unit(clause, quote):
-    """(location, text) of the one unit that contains `quote`, or None when no unit does or more than one does."""
-    wanted = norm(quote).lower()
+    """(location, text) of the unit that `quote` points at. Punctuation at the ends of the quote does not matter. When more than one
+    unit contains it, the most specific kind wins (a lettered point rather than the sentence it belongs to); when several of that kind
+    contain it, or none does, None: it is never guessed between two similar sentences or table cells."""
+    wanted = norm(quote).strip(_EDGE).lower()
     if not wanted:
         return None
     found = [(loc, text) for loc, text in units(clause) if wanted in norm(text).lower()]
-    return found[0] if len(found) == 1 else None
+    if len(found) <= 1:
+        return found[0] if found else None
+    best = min(_SPECIFIC[loc[0]] for loc, _ in found)
+    pool = [(loc, text) for loc, text in found if _SPECIFIC[loc[0]] == best]
+    return pool[0] if len(pool) == 1 else None
+
+
+def unit_hits(clause, quote):
+    """How many units contain the quote (0, 1 or more): why find_unit found nothing."""
+    wanted = norm(quote).strip(_EDGE).lower()
+    return sum(1 for _, text in units(clause) if wanted and wanted in norm(text).lower())
 
 
 # ---------------------------------------------------------------------------------------- checking a proposal
@@ -154,6 +171,7 @@ def removal_of(unit_text, quote):
     if span is None:
         return False
     rest = norm(unit_text)[:span[0]] + " " + norm(unit_text)[span[1]:]
+    rest = re.sub(r"[;,]?\s*\b(?:or|and)\b\s*[.;,]?\s*$", " ", rest, flags=re.IGNORECASE)      # the "; or" that joins a point to the next is not wording
     return not re.search(r"[A-Za-z]{2,}", rest)
 
 
@@ -230,8 +248,9 @@ def _delete(clause, loc):
 
 # ---------------------------------------------------------------------------------------- repairing a proposal
 def _quote_span(old, quote):
-    at = norm(old).lower().find(norm(quote).lower())
-    return (at, at + len(norm(quote))) if norm(quote) and at >= 0 else None
+    wanted = norm(quote).strip(_EDGE)
+    at = norm(old).lower().find(wanted.lower())
+    return (at, at + len(wanted)) if wanted and at >= 0 else None
 
 
 def splice_fragment(old, quote, new):
@@ -334,7 +353,7 @@ def diff_markup(old, new):
     to be changed in the current wording, the words they become in the new wording)."""
     old_w, new_w = norm(old).split(), norm(new).split()
     matcher = difflib.SequenceMatcher(None, [w.lower() for w in old_w], [w.lower() for w in new_w], autojunk=False)
-    before, after = [], []
+    before, after, changed = [], [], 0
     for tag, i1, i2, j1, j2 in matcher.get_opcodes():
         gone, put = [_escape(w) for w in old_w[i1:i2]], [_escape(w) for w in new_w[j1:j2]]
         if tag == "equal":
@@ -345,4 +364,7 @@ def diff_markup(old, new):
             before.append("**" + " ".join(gone) + "**")
         if put:
             after.append("**" + " ".join(put) + "**")
+            changed += len(put)
+    if new_w and changed / len(new_w) > MOSTLY_NEW:
+        after = [_escape(w) for w in new_w]                 # a text that is mostly new is not marked word by word: bold says nothing there
     return " ".join(before), " ".join(after)

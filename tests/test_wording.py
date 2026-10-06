@@ -14,7 +14,7 @@ from core.header import build_header
 from core.render import render_docx
 from core.renumber import renumber_and_render
 from core.wording import (apply_edits, check_rewrite, diff_markup, figure_mismatches, figure_swap, find_unit, norm, removable, removal_of,
-                          splice_fragment, units)
+                          splice_fragment, unit_hits, units)
 
 LD_QUOTE = "at the rate of 0.05 (zero point zero five) percent of the Contract Price per day"
 REQ = "Reduce the delay damages rate to 0.03% per day. reduce delay damages to 0.03% per day"
@@ -166,6 +166,9 @@ def take_out(key, quote):
 def test_a_quote_that_is_all_of_a_unit_removes_the_unit():
     point = "7) epidemic."
     assert removal_of(point, "epidemic") and removal_of(point, "7) epidemic.") and removal_of(point, "epidemic.")
+    joined = "6) any change in law or government action; or"
+    assert removal_of(joined, "any change in law or government action") and removal_of(joined, joined) and removal_of("(a) x, and", "x")
+    assert not removal_of("6) any change in law or government action or the Owner's consent.", "any change in law or government action")
     assert not removal_of(point, "epid") and not removal_of(point, "something else")
     sentence = "The Owner shall pay the Contractor within 30 (thirty) working days."
     assert removal_of(sentence, sentence) and not removal_of(sentence, "within 30 (thirty) working days")
@@ -241,6 +244,44 @@ def test_a_removal_reaches_the_word_file():
 def test_the_before_and_after_of_a_removal():
     before, after = diff_markup("7) epidemic.", "")
     assert before == "**7) epidemic.**" and after == ""
+
+
+# ---------------------------------------------------------------- a quote that is a piece of the contract is found
+def test_punctuation_and_quotation_marks_at_the_ends_of_a_quote_do_not_matter():
+    c = clause("force_majeure")
+    want = find_unit(c, "any change in law or government action")[0]
+    for quote in ("any change in law or government action.", "any change in law or government action;", "\u201cany change in law or government action.\u201d",
+                  "  Any Change in Law or Government Action ;", "any change in law or government action; or"):
+        assert find_unit(c, quote) is not None and find_unit(c, quote)[0] == want, quote
+
+
+def test_a_quote_in_a_sentence_and_in_its_lettered_point_is_the_point():
+    library = library_for({})
+    c = clause("force_majeure", library)
+    point = c.items[1].lettered[5]
+    c.items[1].text += " " + point                                  # the sentence now repeats the point
+    assert unit_hits(c, "any change in law or government action") == 2
+    assert find_unit(c, "any change in law or government action")[0] == ("lettered", 1, 5), "the more specific unit wins"
+
+
+def test_a_quote_in_two_equally_specific_units_is_not_guessed():
+    c = clause("force_majeure", library_for({}))
+    c.items[1].lettered.append(c.items[1].lettered[5])
+    assert unit_hits(c, "any change in law or government action") == 2 and find_unit(c, "any change in law or government action") is None
+    assert find_unit(c, "nothing like this at all") is None and unit_hits(c, "nothing like this at all") == 0 and find_unit(c, "  ") is None
+
+
+# ---------------------------------------------------------------- the new wording is bold only where it differs
+def test_a_new_wording_that_is_mostly_new_is_shown_plain_and_a_small_change_is_not():
+    old = "7) epidemic."
+    new = "7) epidemic, other than for the payment obligations of the Owner."
+    before, after = diff_markup(old, new)
+    assert after == "7) epidemic, other than for the payment obligations of the Owner." and "**" not in after, "mostly new: plain"
+    assert before == "7) **epidemic.**", "the words to be changed are still bold in the current wording"
+    sentence = "The Owner shall pay the Contractor within 30 (thirty) working days after receipt of the invoice."
+    before, after = diff_markup(sentence, sentence.replace("30 (thirty)", "15 (fifteen)"))
+    assert "**15 (fifteen)**" in after and "**30 (thirty)**" in before and after.count("**") == 2, "a small change is marked"
+    assert diff_markup("same", "same") == ("same", "same") and diff_markup("a b", "")[0] == "**a b**" and diff_markup("", "x y")[1] == "x y"
 
 
 # ---------------------------------------------------------------- applying

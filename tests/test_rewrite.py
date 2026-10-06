@@ -139,7 +139,7 @@ def test_a_quote_that_spans_two_sentences_keeps_the_request_but_cannot_be_rewrit
     raw = dev("completion_deadline", across, change="Reduce the rate to 0.03% per day", evidence=REQUEST, new_text=new_ld())
     result = run([raw])
     assert len(result.deviations) == 1 and result.deviations[0].new_text == ""
-    assert result.deviations[0].rewrite_problem == "I could not tell which single sentence the change applies to."
+    assert result.deviations[0].rewrite_problem == "That wording runs across more than one sentence or point."
     inside = run([modify(new_ld())])
     assert inside.deviations[0].new_text                         # a quote inside one sentence is fine
 

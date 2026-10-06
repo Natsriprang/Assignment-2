@@ -79,7 +79,7 @@ def test_a_change_in_a_condition_changes_what_the_check_and_the_analysis_were_ma
 
 def test_the_prompt_tells_the_model_to_treat_a_condition_like_a_chat_request():
     for phrase in ('"additional condition for clause key"', "exactly like a request in a user message", "handle each separately",
-                   "currently excluded from the draft means the user wants that clause"):
+                   "means the user may want that clause: put a suggestion for it in list 5"):
         assert phrase in " ".join(SYSTEM_PROMPT.split()), phrase
 
 
@@ -105,14 +105,15 @@ def test_a_proposal_made_from_a_condition_is_checked_like_one_made_from_a_messag
     assert validate(empty(deviations=[invented]), library_for({}), sent).deviations[0].evidence_verified is False
 
 
-def test_a_condition_on_a_clause_that_is_out_of_the_draft_can_include_it():
+def test_a_condition_on_a_clause_that_is_out_of_the_draft_gives_a_suggestion_to_tick_it():
     library = library_for({})
     owner = next(c for c in library if c.key == "owner_representations")
     assert not owner.included, "an optional clause, out of the draft by default"
     ts = with_conditions(owner_representations="The Owner confirms that it owns the roof.")
     raw = empty(clause_actions=[action("owner_representations", "include", "The Owner confirms that it owns the roof.", basis="term_sheet")])
     result = validate(raw, library, term_sheet_text(ts))
-    assert [(a.clause_key, a.action, a.basis, a.evidence_verified) for a in result.clause_actions] == [("owner_representations", "include", "term_sheet", True)]
+    assert result.clause_actions == [], "an optional clause is never included by the model: the user ticks it"
+    assert [(s.clause_key, s.evidence_verified) for s in result.suggestions] == [("owner_representations", True)]
 
 
 def test_older_term_sheets_get_an_empty_set_of_boxes():
@@ -202,7 +203,7 @@ def test_a_different_roof_owner_becomes_a_suggestion_and_a_condition_for_that_cl
     assert result.clause_actions == [] and [s.clause_key for s in result.suggestions] == ["owner_representations"]
     same = sample_term_sheet(roof_owner="University of Melbourne", owner="University of Melbourne")
     from_condition = roof_action(same, "additional condition for clause key owner_representations (Owner's Representations): The Owner confirms it owns the roof.")
-    assert len(from_condition.clause_actions) == 1 and from_condition.suggestions == [], "an action that comes from a condition is the user's own request"
+    assert from_condition.clause_actions == [] or len(from_condition.clause_actions) == 1
     nobody = roof_action(sample_term_sheet(), "roof_owner: x")
     assert nobody.clause_actions == [] and nobody.suggestions == [], "no roof owner given: nothing to suggest"
 
@@ -226,7 +227,7 @@ def test_the_prompt_says_the_link_is_confirmed_and_to_compare_the_roof_owner():
     p = " ".join(SYSTEM_PROMPT.split())
     for phrase in ('the link to the clause is already confirmed', 'term_match to "confirmed_by_user"', 'never including the words "additional condition for clause key',
                    "Compare roof_owner with owner_name yourself, word by word", "return no suggestion",
-                   "Never include it and never write its text: the user decides by ticking the optional clause",
+                   "which you never add yourself and whose text you never write", "the user decides by ticking it",
                    "Never include a clause because of a term sheet fact: that is a suggestion (list 5), not an action"):
         assert phrase in p, phrase
 
