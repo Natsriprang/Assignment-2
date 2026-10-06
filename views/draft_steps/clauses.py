@@ -196,6 +196,7 @@ def reject_request(msg, entry_id, text):
     entry = next((e for e in st.session_state.get(REQUESTS_KEY, []) if e["id"] == entry_id), {"id": entry_id, "text": text})
     msg.setdefault("rejected_requests", {})[key] = {"entry": dict(entry), "snapshot": drafts.snapshot(entry_id)}
     msg.setdefault("rejected", {})[key] = f"New clause request: {text}"
+    msg.setdefault("rejected_numbers", {})[key] = entry_id
     st.session_state[REQUESTS_KEY] = [e for e in st.session_state.get(REQUESTS_KEY, []) if e["id"] != entry_id]
     drafts.forget(entry_id)
 
@@ -264,7 +265,7 @@ def render_draft(entry_id, drafted, clauses, msg, text):
         else:
             st.warning("Every sentence is cleared, so this clause is left out of the contract.")
         c0, c1, c2, _ = st.columns([2, 1, 1, 4])
-        c0.button("Apply this clause", type="primary", on_click=apply_draft, args=(entry_id, text), disabled=not sentences,
+        c0.button("Apply", type="primary", on_click=apply_draft, args=(entry_id, text), disabled=not sentences,
                   key=widget_key("apply_draft", str(entry_id)))
         c1.button("Edit", on_click=drafts.start_edit, args=(entry_id, drafted), key=widget_key("edit_draft", str(entry_id)))
         c2.button("Reject", on_click=reject_request, args=(msg, entry_id, text), key=widget_key("reject_request", str(entry_id)))
@@ -313,15 +314,17 @@ def display_text(result, latest):
     return ("I found " if latest else "Earlier reply: ") + ", ".join(parts) + (". The details are below." if latest else ".")
 
 
-def reject_proposal(msg, key, label):
-    """Reject button callback: the proposal is dismissed for this reply and the model is told on the next analysis."""
+def reject_proposal(msg, key, label, number):
+    """Reject button callback: the proposal is dismissed (the list says "Request N rejected") and the model is told on the next analysis."""
     msg.setdefault("rejected", {})[key] = label
+    msg.setdefault("rejected_numbers", {})[key] = number
 
 
 def undo_reject(msg, key):
     """Undo button of a rejection: the proposal is back, and the model is no longer told it was rejected. A rejected
     request comes back with its draft, its saved wording, its position and its number."""
     msg.get("rejected", {}).pop(key, None)
+    msg.get("rejected_numbers", {}).pop(key, None)
     snap = msg.get("rejected_requests", {}).pop(key, None)
     if snap:
         entries = st.session_state.setdefault(REQUESTS_KEY, [])
@@ -353,59 +356,59 @@ def applied_entries_now():
     return [e for batch in st.session_state.get(APPLIED_KEY, []) for e in batch["entries"] if still_applied(e, failed)]
 
 
-def apply_proposals(msg):
-    """Apply button callback. Writes the ticked proposals into the draft's selection. Callbacks run
-    before the page reruns, which is what allows this to change the checkboxes' state. Each change that is written is recorded
-    with what is needed to take it back, so that it keeps its own Undo for as long as it is in the draft."""
-    result = msg["result"]
-    rejected = msg.get("rejected") or {}
+def titles_now():
     titles = {c.key: c.title for c in build_library()}
     titles.update({d["key"]: d["title"] for d in drafts.drafted_for_library()})
-    applied, entries = [], []
-    state = clause_sandbox.ensure_state(STATE_KEY)
-    for a in result.clause_actions:
-        if action_key(a) not in rejected and st.session_state.get(action_key(a), a.evidence_verified):
-            previous = state.get(a.clause_key)
-            clause_sandbox.set_clause(STATE_KEY, a.clause_key, a.action == "include")
-            verb = "Removed" if a.action == "exclude" else "Added"
-            applied.append(f"{verb} clause: {titles[a.clause_key]}")
-            entries.append({"kind": "clause", "key": a.clause_key, "action": a.action, "previous": previous, "number": action_number(a),
-                            "heading": f"{'Remove' if a.action == 'exclude' else 'Add'} clause: {titles[a.clause_key]}",
-                            "source": "You wrote" if a.basis == "comment" else "From the term sheet", "evidence": a.evidence, "reason": a.reason})
-    deviations = [d for d in result.deviations if deviation_key(d) not in rejected]
-    chosen = []
-    for d in deviations:
-        if not st.session_state.get(deviation_key(d), default_tick(d)):
-            continue
-        title = titles.get(d.clause_key, d.clause_key)
-        text = current_text(d)
-        removing = d.removes and not text
-        drafted_id = int(d.clause_key.split("_", 1)[1]) if d.clause_key.startswith("drafted_") else None
-        saved_before = st.session_state.get(drafts.SAVED_STORE, {}).get(drafted_id) if drafted_id is not None else None
-        saved_before = list(saved_before) if saved_before is not None else None
-        if not applicable(d):
-            applied.append(f"Not applied: {title}: {d.summary} (I could not tell which sentence it changes)")
-        elif not removing and (not text or (d.change_type != "add" and text.lower() == wording.norm(d.old_text).lower())):
-            applied.append(f"Not applied: {title}: {d.summary} (the wording was not changed)")
-        elif write_wording_change(d, text, removing):
-            chosen.append(d)
-            applied.append(f"Wording changed in {title}: {d.summary}")
-            entries.append({"kind": "wording", "key": d.clause_key, "heading": f"{title}: {d.summary}", "requested_change": d.requested_change,
-                            "number": deviation_number(d),
-                            "evidence": d.evidence, "change_type": d.change_type, "old": d.old_text, "new": "" if removing else text,
-                            "removed": removing, "drafted_id": drafted_id, "saved_before": saved_before,
-                            "edit_id": None if drafted_id is not None else widget_key(
-                                "edit", d.clause_key, "remove" if removing else d.change_type, d.old_text, text)})
-        else:
-            applied.append(f"Not applied: {title}: {d.summary} (that sentence is no longer in the clause)")
-    st.session_state[DEVIATIONS_KEY] = chosen
-    if not entries:                                  # nothing was written: the proposals stay open, with the reasons shown above them
-        msg["not_applied"] = applied
-        return
-    msg.pop("not_applied", None)
-    msg["applied"] = applied
-    msg["applied_entries"] = entries
-    log_applied(entries)
+    return titles
+
+
+def apply_action(msg, a):
+    """Apply button of a clause removal or addition: written into the draft's selection, and listed with what is applied."""
+    titles = titles_now()
+    previous = clause_sandbox.ensure_state(STATE_KEY).get(a.clause_key)
+    clause_sandbox.set_clause(STATE_KEY, a.clause_key, a.action == "include")
+    entry = {"kind": "clause", "key": a.clause_key, "action": a.action, "previous": previous, "number": action_number(a),
+             "heading": f"{'Remove' if a.action == 'exclude' else 'Add'} clause: {titles[a.clause_key]}",
+             "source": "You wrote" if a.basis == "comment" else "From the term sheet", "evidence": a.evidence, "reason": a.reason}
+    log_applied([entry])
+    msg.setdefault("applied_entries", []).append(entry)
+
+
+def apply_deviation(msg, d):
+    """Apply button of a wording change: the wording as the user left it (saved) is written into the draft. When it cannot be written
+    the reason is shown in its box and nothing changes."""
+    key = deviation_key(d)
+    notes = msg.setdefault("item_notes", {})
+    title = titles_now().get(d.clause_key, d.clause_key)
+    text = current_text(d)
+    removing = d.removes and not text
+    drafted_id = int(d.clause_key.split("_", 1)[1]) if d.clause_key.startswith("drafted_") else None
+    saved_before = st.session_state.get(drafts.SAVED_STORE, {}).get(drafted_id) if drafted_id is not None else None
+    saved_before = list(saved_before) if saved_before is not None else None
+    if not applicable(d):
+        notes[key] = "I could not tell which sentence it changes."
+    elif not removing and (not text or (d.change_type != "add" and text.lower() == wording.norm(d.old_text).lower())):
+        notes[key] = "The wording was not changed: press Edit to write the new wording, then Apply."
+    elif not write_wording_change(d, text, removing):
+        notes[key] = "That sentence is no longer in the clause: it changed after another request was applied."
+    else:
+        notes.pop(key, None)
+        entry = {"kind": "wording", "key": d.clause_key, "heading": f"{title}: {d.summary}", "requested_change": d.requested_change,
+                 "number": deviation_number(d), "evidence": d.evidence, "change_type": d.change_type, "old": d.old_text,
+                 "new": "" if removing else text, "removed": removing, "drafted_id": drafted_id, "saved_before": saved_before,
+                 "edit_id": None if drafted_id is not None else widget_key("edit", d.clause_key, "remove" if removing else d.change_type, d.old_text, text)}
+        log_applied([entry])
+        msg.setdefault("applied_entries", []).append(entry)
+        st.session_state[DEVIATIONS_KEY] = list(st.session_state.get(DEVIATIONS_KEY) or []) + [d]
+
+
+def apply_all(msg):
+    """Apply all button: every open request that needs no care is applied, in the order of its number. A request with a warning, one that
+    takes a whole point out, or one whose quote was not found, is left for the user's own Apply."""
+    actions, deviations = open_items(msg)
+    todo = [(action_number(a), "a", a) for a in actions if a.evidence_verified] + [(deviation_number(d), "d", d) for d in deviations if default_tick(d)]
+    for _, kind, item in sorted(todo, key=lambda x: x[0]):
+        (apply_action if kind == "a" else apply_deviation)(msg, item)
 
 
 def log_applied(entries):
@@ -448,8 +451,7 @@ def revert_entry(e):
 
 def undo_entry(uid):
     """Undo button of an applied change: that change is taken out of the draft and its box leaves the list. What was applied before or
-    after it, and anything the user did by hand, stays. When it was the last change of the latest reply, that reply's proposals are
-    open again."""
+    after it, and anything the user did by hand, stays. The request is a proposal again, with its own Apply."""
     log = st.session_state.get(APPLIED_KEY, [])
     chat = st.session_state.get("chat") or []
     st.session_state.pop(UNDO_NOTE_KEY, None)
@@ -457,7 +459,6 @@ def undo_entry(uid):
         entry = next((e for e in batch["entries"] if e["uid"] == uid), None)
         if entry is None:
             continue
-        owner = next((m for m in chat if any(x is entry for x in m.get("applied_entries") or [])), None)
         failing_before = failed_edit_ids()
         revert_entry(entry)
         batch["entries"].remove(entry)
@@ -471,11 +472,6 @@ def undo_entry(uid):
                     gone.append(e["heading"])
         if gone:
             st.session_state[UNDO_NOTE_KEY] = ("Also taken out, because it changed the same sentence after it: " + "; ".join(gone) + ".")
-        latest = next((m for m in reversed(chat) if m["role"] == "assistant" and "result" in m), None)
-        for m in chat:
-            if m.get("applied") is not None and not m.get("applied_entries") and m is latest and (m is owner or gone):
-                m["applied"] = None
-                m.pop("applied_entries", None)
     st.session_state[APPLIED_KEY] = [b for b in log if b["entries"]]
 
 
@@ -495,15 +491,32 @@ def write_wording_change(d, text, removing=False):
     return True
 
 
+def all_rejections():
+    """[(number, label, key, msg)] for every rejected request of every reply, in the order of their numbers."""
+    out = []
+    for m in st.session_state.get("chat") or []:
+        for key, label in (m.get("rejected") or {}).items():
+            n = (m.get("rejected_numbers") or {}).get(key)
+            if n is not None:
+                out.append((n, label, key, m))
+    return sorted(out, key=lambda x: x[0])
+
+
+def open_items(msg, result=None):
+    """(clause actions, wording changes) of the reply that are neither rejected nor applied: they are the ones still waiting for the user."""
+    result = result or msg["result"]
+    rejected = {key for _, _, key, _ in all_rejections()}
+    applied = {e["number"] for e in applied_entries_now()}
+    return ([a for a in result.clause_actions if action_key(a) not in rejected and action_number(a) not in applied],
+            [d for d in result.deviations if deviation_key(d) not in rejected and deviation_number(d) not in applied])
+
+
 def pending_deviations(chat):
     """The wording changes the latest reply proposed that the user has neither applied nor rejected, so the next analysis
     keeps them (see ai.interpret.settle)."""
     for m in reversed(chat):
         if m["role"] == "assistant" and "result" in m:
-            if m.get("applied") is not None:
-                return []
-            rejected = m.get("rejected") or {}
-            return [d for d in m["result"].deviations if deviation_key(d) not in rejected]
+            return open_items(m)[1]
     return []
 
 
@@ -523,7 +536,7 @@ def clause_preview(clauses, key, removing):
                 show(sub, caption=True)
 
 
-def render_deviation(d, lookup, msg):
+def render_deviation(d, lookup, msg, stale=False):
     """One wording change in its own box: the current and the new wording, advice from the checks, and Edit and Reject side by
     side (Save and Cancel while the wording is open for editing), like the clauses the AI drafted."""
     key = deviation_key(d)
@@ -579,24 +592,15 @@ def render_deviation(d, lookup, msg):
         st.caption(f"You wrote: \u201c{plain(d.evidence)}\u201d")
         if not d.evidence_verified:
             st.warning("This quote was not found in your messages. Check it before applying.")
-        st.checkbox("Apply this change", value=default_tick(d), key=key, disabled=not applicable(d))
+        note = (msg.get("item_notes") or {}).get(key)
+        if note:
+            st.warning(note)
         if not editing:
-            c1, c2, _ = st.columns([1, 1, 6])
-            if applicable(d):
-                c1.button("Edit", on_click=start_wording_edit, args=(d,), key=widget_key("edit_wording", key))
-            c2.button("Reject", on_click=reject_proposal, args=(msg, key, label), key=widget_key("reject", key))
-
-
-def show_rejected(msg, rejected):
-    """The rejected items, each with an Undo that brings it back. A rejected proposal can be brought back only while its reply
-    has not been applied (after that, Undo the Apply first); a rejected request can be brought back at any time."""
-    open_to_undo = msg.get("applied") is None
-    requests = msg.get("rejected_requests") or {}
-    for key, label in list(rejected.items()):
-        c1, c2 = st.columns([8, 1])
-        c1.write(plain(f"Rejected: {label}"))
-        if open_to_undo or key in requests:
-            c2.button("Undo", on_click=undo_reject, args=(msg, key), key=widget_key("undo_reject", key))
+            c0, c1, c2, _ = st.columns([1, 1, 1, 5])
+            c0.button("Apply", type="primary", on_click=apply_deviation, args=(msg, d), disabled=stale or not applicable(d),
+                      key=widget_key("apply_dev", key))
+            c1.button("Edit", on_click=start_wording_edit, args=(d,), disabled=not applicable(d), key=widget_key("edit_wording", key))
+            c2.button("Reject", on_click=reject_proposal, args=(msg, key, label, deviation_number(d)), key=widget_key("reject", key))
 
 
 def failed_edit_ids():
@@ -625,129 +629,130 @@ def still_applied(e, failed=None):
     return e["edit_id"] not in failed and any(x["id"] == e["edit_id"] for x in wording_state.applied())
 
 
-def render_applied_entry(e):
-    """One applied change, as it was proposed (the same box, without the controls), marked as applied."""
-    with st.container(border=True):
-        st.markdown(f"#### Request {e['number']}: {plain(e['heading'])}")
-        st.caption("Applied to the draft")
-        if e["kind"] == "new_clause":
-            drafted = st.session_state.get(DRAFTS_KEY, {}).get(e["drafted_id"])
-            if drafts.is_editing(e["drafted_id"]):
-                draft_edit_box(e["drafted_id"])
-            else:
-                sentences = drafts.sentences_of(e["drafted_id"], drafted)
-                if sentences:
-                    st.write("\n\n".join(plain(s) for s in sentences))
-                else:
-                    st.warning("Every sentence is cleared, so this clause is left out of the contract.")
-                where = drafts.placement_of(e["drafted_id"], drafted)
-                titles = {c.key: c.title for c in build_library()}
-                st.caption("At the end of the contract" if where == "end" else f"Placed before: {titles.get(where, where)}")
-                st.caption(f"You wrote: \u201c{plain(e['evidence'])}\u201d")
-                c1, c2, _ = st.columns([1, 1, 8])
-                c1.button("Edit", on_click=drafts.start_edit, args=(e["drafted_id"], drafted), key=widget_key("edit_draft", str(e["drafted_id"])))
-                c2.button("Undo", on_click=undo_entry, args=(e["uid"],), key=widget_key("undo_entry", e["uid"]))
+def render_applied_body(e):
+    """What was applied, as it was proposed, with its Undo: the inside of the dropdown of an applied request."""
+    if e["kind"] == "new_clause":
+        drafted = st.session_state.get(DRAFTS_KEY, {}).get(e["drafted_id"])
+        if drafts.is_editing(e["drafted_id"]):
+            draft_edit_box(e["drafted_id"])
             return
-        if e["kind"] == "clause":
-            st.caption(f"{e['source']}: \u201c{plain(e['evidence'])}\u201d")
-            if e["reason"].strip() and e["reason"].strip().lower() != e["evidence"].strip().lower():
-                st.write(plain(e["reason"]))
-            st.button("Undo", on_click=undo_entry, args=(e["uid"],), key=widget_key("undo_entry", e["uid"]))
-            return
-        st.write(f"Wording change: {plain(e['requested_change'])}")
-        if e["change_type"] == "add":
-            st.caption("A new sentence at the end of this clause")
-            st.markdown(plain(e["new"]))
+        sentences = drafts.sentences_of(e["drafted_id"], drafted)
+        if sentences:
+            st.write("\n\n".join(plain(x) for x in sentences))
         else:
-            before, after = wording.diff_markup(e["old"], e["new"])
-            st.caption("Current wording")
-            st.markdown(before)
-            st.caption("New wording")
-            st.markdown("_Taken out of the clause._" if e["removed"] else after)
+            st.warning("Every sentence is cleared, so this clause is left out of the contract.")
+        where = drafts.placement_of(e["drafted_id"], drafted)
+        titles = {c.key: c.title for c in build_library()}
+        st.caption("At the end of the contract" if where == "end" else f"Placed before: {titles.get(where, where)}")
         st.caption(f"You wrote: \u201c{plain(e['evidence'])}\u201d")
+        c1, c2, _ = st.columns([1, 1, 8])
+        c1.button("Edit", on_click=drafts.start_edit, args=(e["drafted_id"], drafted), key=widget_key("edit_draft", str(e["drafted_id"])))
+        c2.button("Undo", on_click=undo_entry, args=(e["uid"],), key=widget_key("undo_entry", e["uid"]))
+        return
+    if e["kind"] == "clause":
+        st.caption(f"{e['source']}: \u201c{plain(e['evidence'])}\u201d")
+        if e["reason"].strip() and e["reason"].strip().lower() != e["evidence"].strip().lower():
+            st.write(plain(e["reason"]))
         st.button("Undo", on_click=undo_entry, args=(e["uid"],), key=widget_key("undo_entry", e["uid"]))
+        return
+    st.write(f"Wording change: {plain(e['requested_change'])}")
+    if e["change_type"] == "add":
+        st.caption("A new sentence at the end of this clause")
+        st.markdown(plain(e["new"]))
+    else:
+        before, after = wording.diff_markup(e["old"], e["new"])
+        st.caption("Current wording")
+        st.markdown(before)
+        st.caption("New wording")
+        st.markdown("_Taken out of the clause._" if e["removed"] else after)
+    st.caption(f"You wrote: \u201c{plain(e['evidence'])}\u201d")
+    st.button("Undo", on_click=undo_entry, args=(e["uid"],), key=widget_key("undo_entry", e["uid"]))
 
 
-def render_applied_log():
-    """Everything applied to the draft so far, in the order it was applied, so that it stays on this page whatever is asked next."""
-    failed = failed_edit_ids()
-    entries = [e for batch in st.session_state.get(APPLIED_KEY, []) for e in batch["entries"] if still_applied(e, failed)]
-    note = st.session_state.pop(UNDO_NOTE_KEY, None)
-    if note:
-        st.info(note)
-    if entries:
-        st.subheader("Applied to the draft")
-        for e in entries:
-            render_applied_entry(e)
+def render_action_box(a, lookup, clauses, msg, stale):
+    """A proposal to take a clause out or put it back: Apply and Reject (Edit is there too, and cannot be pressed: there is nothing to edit)."""
+    with st.container(border=True):
+        verb = "Remove" if a.action == "exclude" else "Add"
+        label = f"{verb} clause: {lookup[a.clause_key].title}"
+        st.markdown(f"#### Request {action_number(a)}: {plain(label)}")
+        source = "You wrote" if a.basis == "comment" else "From the term sheet"
+        st.caption(f"{source}: \u201c{plain(a.evidence)}\u201d")
+        if a.reason.strip() and a.reason.strip().lower() != a.evidence.strip().lower():
+            st.caption(f"Why: {plain(a.reason)}")
+        clause_preview(clauses, a.clause_key, removing=a.action == "exclude")
+        if not a.evidence_verified:
+            st.warning("This quote was not found in your messages. Check it before applying.")
+        c0, c1, c2, _ = st.columns([1, 1, 1, 5])
+        c0.button("Apply", type="primary", on_click=apply_action, args=(msg, a), disabled=stale, key=widget_key("apply_act", action_key(a)))
+        c1.button("Edit", disabled=True, key=widget_key("edit_act", action_key(a)))
+        c2.button("Reject", on_click=reject_proposal, args=(msg, action_key(a), label, action_number(a)), key=widget_key("reject", action_key(a)))
+
+
+def render_request_box(entry_id, text, clauses, msg, out):
+    """A request for a new clause: first Find references and draft, then the draft with Apply, Edit and Reject."""
+    stored = st.session_state.get(DRAFTS_KEY, {})
+    with st.container(border=True):
+        st.markdown(f"#### Request {entry_id}: {plain(text)}")
+        if entry_id in stored:
+            render_draft(entry_id, stored[entry_id], clauses, msg, text)
+        else:
+            st.caption("The library has no matching clause. I can look for references and draft one.")
+            find, reject, _ = st.columns([3, 1, 4])
+            if find.button("Find references and draft this clause", key=widget_key("draft", str(entry_id))):
+                out["draft_request"] = (entry_id, text)
+            reject.button("Reject", on_click=reject_request, args=(msg, entry_id, text), key=widget_key("reject_request", str(entry_id)))
 
 
 def render_results(msg, clauses, turn, stale, all_clauses=None):
-    """The results for the latest reply. Every item sits in its own box; the new-clause requests are numbered
-    in the order they were first raised. `all_clauses` also has the clauses drafted in this session, which a wording
-    change may name. Returns (quick_reply, draft_request) when a Yes/No or draft button was pressed."""
+    """The one list of requests, in the order of their numbers: a proposal has Apply, Edit and Reject; an applied request is a dropdown
+    with its Undo; a rejected request is one line ("Request 2 rejected") that stays where it was, so nothing is renumbered. Then the
+    questions and the suggestions. `msg` is the latest reply (None when there is none). Returns (quick_reply, draft_request) when a
+    Yes/No or draft button was pressed."""
     lookup = all_clauses or clauses
-    result = forget_unknown_clauses(msg["result"], list(lookup.values()))
-    proposals, questions, _ = result_lines(result, list(lookup.values()))
-    rejected = msg.get("rejected") or {}
-    requests = new_clause_requests(result, rejected)
-    quick_reply, draft_request = None, None
+    out = {"quick_reply": None, "draft_request": None}
+    result = forget_unknown_clauses(msg["result"], list(lookup.values())) if msg is not None else None
+    proposals, questions, _ = result_lines(result, list(lookup.values())) if result is not None else ([], [], [])
+    rejections = all_rejections()
+    requests = new_clause_requests(result, {key: label for _, label, key, _ in rejections}) if result is not None else []
+    open_actions, open_deviations = open_items(msg, result) if result is not None else ([], [])
+    failed = failed_edit_ids()
+    applied = [e for batch in st.session_state.get(APPLIED_KEY, []) for e in batch["entries"] if still_applied(e, failed)]
+    suggestions = [s for s in (result.suggestions if result is not None else []) if not lookup[s.clause_key].included]   # gone once the clause is ticked
 
-    st.subheader("What I found")
-    suggestions = [s for s in result.suggestions if not lookup[s.clause_key].included]       # gone once the user ticks the clause
-    if not (proposals or questions or requests or rejected or suggestions):
-        st.write("No changes to the standard contract.")
-
-    open_actions = [a for a in result.clause_actions if action_key(a) not in rejected]
-    open_deviations = [d for d in result.deviations if deviation_key(d) not in rejected]
-
-    if msg.get("applied") is not None:
-        if any(not line.startswith("Not applied") for line in msg["applied"]):
-            st.success("Applied to the draft.")
-        else:
-            st.info("Nothing was applied.")
-        show_lines(f"- {line}" for line in msg["applied"] if line.startswith("Not applied"))
-    elif open_actions or open_deviations:
-        if msg.get("not_applied") is not None:
-            st.info("Nothing was applied." if not msg["not_applied"] else "Nothing was applied: tick what you want applied, or change it first.")
-            show_lines(f"- {line}" for line in msg["not_applied"])
-        st.markdown("**Proposed changes**")
-        for a in open_actions:
-            with st.container(border=True):
-                verb = "Remove" if a.action == "exclude" else "Add"
-                label = f"{verb} clause: {lookup[a.clause_key].title}"
-                st.markdown(f"#### Request {action_number(a)}: {plain(label)}")
-                source = "You wrote" if a.basis == "comment" else "From the term sheet"
-                st.caption(f"{source}: \u201c{plain(a.evidence)}\u201d")
-                if a.reason.strip() and a.reason.strip().lower() != a.evidence.strip().lower():
-                    st.caption(f"Why: {plain(a.reason)}")
-                clause_preview(clauses, a.clause_key, removing=a.action == "exclude")
-                if not a.evidence_verified:
-                    st.warning("This quote was not found in your messages. Check it before applying.")
-                st.checkbox("Apply this change", value=a.evidence_verified, key=action_key(a))
-                st.button("Reject", on_click=reject_proposal, args=(msg, action_key(a), label),
-                          key=widget_key("reject", action_key(a)))
-
-        for d in open_deviations:
-            render_deviation(d, lookup, msg)
-
-        st.button("Apply selected changes", type="primary", on_click=apply_proposals, args=(msg,),
-                  disabled=stale, key=widget_key("apply", str(turn)))
-    if rejected:
-        show_rejected(msg, rejected)
-
-    stored = st.session_state.get(DRAFTS_KEY, {})
+    items = []
+    for a in open_actions:
+        items.append((action_number(a), lambda a=a: render_action_box(a, lookup, clauses, msg, stale)))
+    for d in open_deviations:
+        items.append((deviation_number(d), lambda d=d: render_deviation(d, lookup, msg, stale)))
     for entry_id, text in requests:
-        with st.container(border=True):
-            st.markdown(f"#### Request {entry_id}: {plain(text)}")
-            if entry_id in stored:
-                render_draft(entry_id, stored[entry_id], clauses, msg, text)
-            else:
-                st.caption("The library has no matching clause. I can look for references and draft one.")
-                find, reject, _ = st.columns([3, 1, 4])
-                if find.button("Find references and draft this clause", key=widget_key("draft", str(entry_id))):
-                    draft_request = (entry_id, text)
-                reject.button("Reject", on_click=reject_request, args=(msg, entry_id, text),
-                              key=widget_key("reject_request", str(entry_id)))
+        items.append((entry_id, lambda i=entry_id, t=text: render_request_box(i, t, clauses, msg, out)))
+    for e in applied:
+        def show_applied(e=e):
+            with st.expander(f"Request {e['number']}: {e['heading']} (applied)"):
+                render_applied_body(e)
+        items.append((e["number"], show_applied))
+    for n, label, key, owner in rejections:
+        def show_rejected(n=n, key=key, owner=owner):
+            c1, c2 = st.columns([8, 1])
+            c1.write(f"Request {n} rejected.")
+            c2.button("Undo", on_click=undo_reject, args=(owner, key), key=widget_key("undo_reject", key))
+        items.append((n, show_rejected))
+
+    if not (items or questions or suggestions):
+        if msg is not None:
+            st.subheader("What I found")
+            st.write("No changes to the standard contract.")
+        return None, None
+    st.subheader("What I found")
+    note = st.session_state.pop(UNDO_NOTE_KEY, None)
+    if note:
+        st.info(note)
+    for _, show in sorted(items, key=lambda x: x[0]):
+        show()
+    if open_actions or open_deviations:
+        ready = any(a.evidence_verified for a in open_actions) or any(default_tick(d) for d in open_deviations)
+        st.button("Apply all", type="primary", on_click=apply_all, args=(msg,), disabled=stale or not ready, key=widget_key("apply_all", str(turn)))
+        st.caption("Apply all leaves out a request that has a warning or takes a whole point out: apply those yourself, one by one.")
 
     if questions:
         st.markdown("**Questions**")
@@ -761,20 +766,20 @@ def render_results(msg, clauses, turn, stale, all_clauses=None):
                 st.write(plain(candidate_question(u, title)))
                 c1, c2, _ = st.columns([2, 2, 3])
                 if c1.button("Yes, that's what I meant", key=widget_key("yes", str(turn), str(i))):
-                    quick_reply = f"Yes, by \u201c{said}\u201d I meant the '{title}' clause."
+                    out["quick_reply"] = f"Yes, by \u201c{said}\u201d I meant the '{title}' clause."
                     st.session_state[DECLINED_KEY] = [x for x in st.session_state.get(DECLINED_KEY, [])
                                                       if not (x["key"] == u.candidate_key and x["evidence"] == said)]
                 if c2.button("No, something else", key=widget_key("no", str(turn), str(i))):
-                    quick_reply = f"No, by \u201c{said}\u201d I did not mean the '{title}' clause."
+                    out["quick_reply"] = f"No, by \u201c{said}\u201d I did not mean the '{title}' clause."
                     st.session_state.setdefault(DECLINED_KEY, []).append({"key": u.candidate_key, "evidence": said})
 
     if suggestions:
         st.markdown("**Suggestions**")
-        for s in suggestions:
-            st.info(f"Suggestion: add {plain(lookup[s.clause_key].title)}. {plain(s.reason)} "
+        for s_ in suggestions:
+            st.info(f"Suggestion: add {plain(lookup[s_.clause_key].title)}. {plain(s_.reason)} "
                     "Tick it under Optional clauses if you want it in the draft.")
 
-    return quick_reply, draft_request
+    return out["quick_reply"], out["draft_request"]
 
 
 def render():
@@ -855,10 +860,7 @@ def render():
             else:
                 show_lines(msg["content"].split("\n"))
 
-    quick_reply, draft_request = None, None
-    render_applied_log()
-    if latest is not None:
-        quick_reply, draft_request = render_results(latest, clauses, len(chat), stale, all_clauses)
+    quick_reply, draft_request = render_results(latest, clauses, len(chat), stale, all_clauses)
 
     if client is not None and draft_request:
         entry_id, request_text = draft_request
@@ -918,10 +920,8 @@ def render():
                 st.rerun()
 
     st.divider()
-    if (latest is not None and latest.get("applied") is None
-            and (latest["result"].clause_actions or latest["result"].deviations)):
-        st.caption("Some proposals above have not been applied yet. Press \u201cApply selected "
-                   "changes\u201d first, or continue without them.")
+    if latest is not None and any(open_items(latest)):
+        st.caption("Some requests above have not been applied yet. Apply them, or continue without them.")
     if not has_analysis():
         st.caption("Run the analysis once to continue: send a message, or press "
                    "\u201cNo special requests\u201d." if not conditions else

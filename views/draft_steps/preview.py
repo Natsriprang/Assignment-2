@@ -2,10 +2,11 @@
 import streamlit as st
 
 from views import clause_sandbox
-from views.draft_steps import clauses
+from views.draft_steps import clauses, risks
 
 
 def render():
     clause_sandbox.show_vat_notice()
     st.caption("The draft as it stands: the clauses chosen in the previous step, renumbered.")
+    risks.show()
     clause_sandbox.render_preview(clauses.STATE_KEY, noun="draft", header=True)
