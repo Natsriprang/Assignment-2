@@ -1,5 +1,6 @@
-"""Session state for drafted new clauses: which ones the user keeps, where each one goes, and the wording of
-the sentences after the user's edits.
+"""Session state for drafted new clauses: which ones the user has applied, where each one goes, and the wording of
+the sentences after the user's edits. A drafted clause is only a proposal until the user presses Apply on it: only applied
+clauses are in the contract, in the preview and in what the AI reads.
 
 Streamlit drops a widget's state when the widget is not drawn in a run, which happens as soon as the user
 moves to another step. The choices are therefore also copied into plain session dicts, which survive. While
@@ -13,14 +14,10 @@ import streamlit as st
 
 DRAFTS_KEY = "clause_drafts_v2"          # request id -> DraftedClause
 PLACEMENT_STORE = "draft_placements"     # request id -> key of the clause it goes in front of, or "end"
-KEEP_STORE = "draft_keeps"               # request id -> bool
+APPLIED_SET = "draft_applied_drafts"     # set of request ids whose drafted clause the user has applied (it is in the contract)
 SAVED_STORE = "draft_saved_sentences"    # request id -> [sentence] after the user pressed Save
 WORKING_STORE = "draft_working_text"     # request id -> the text being edited (only while editing)
 EDITING_KEY = "draft_editing"            # set of request ids that are open for editing
-
-
-def keep_key(entry_id):
-    return f"keep_draft_{entry_id}"
 
 
 def placement_key(entry_id):
@@ -81,11 +78,19 @@ def cancel_edit(entry_id):
     _close(entry_id)
 
 
-# ---------------------------------------------------------------------------- keep and position
+# ---------------------------------------------------------------------------- applied and position
 def is_kept(entry_id):
-    if keep_key(entry_id) in st.session_state:
-        return bool(st.session_state[keep_key(entry_id)])
-    return st.session_state.get(KEEP_STORE, {}).get(entry_id, True)
+    """True once the user has applied the drafted clause: from then on it is in the contract."""
+    return entry_id in st.session_state.get(APPLIED_SET, set())
+
+
+def apply(entry_id):
+    st.session_state.setdefault(APPLIED_SET, set()).add(entry_id)
+
+
+def unapply(entry_id):
+    """Takes the clause out of the contract again; it is a proposal once more, with its wording and position as they were."""
+    st.session_state.get(APPLIED_SET, set()).discard(entry_id)
 
 
 def placement_of(entry_id, drafted):
@@ -95,13 +100,12 @@ def placement_of(entry_id, drafted):
     return st.session_state.get(PLACEMENT_STORE, {}).get(entry_id, drafted.placement_before)
 
 
-def remember(entry_id, kept, placement):
-    st.session_state.setdefault(KEEP_STORE, {})[entry_id] = bool(kept)
+def remember(entry_id, placement):
     st.session_state.setdefault(PLACEMENT_STORE, {})[entry_id] = placement
 
 
 def kept():
-    """[(request id, DraftedClause)] for the drafts the user keeps, in the order the requests were first raised."""
+    """[(request id, DraftedClause)] for the drafts the user has applied, in the order the requests were first raised."""
     return [(entry_id, drafted) for entry_id, drafted in sorted(st.session_state.get(DRAFTS_KEY, {}).items())
             if is_kept(entry_id)]
 
@@ -141,8 +145,8 @@ def snapshot(entry_id):
         value = st.session_state.get(store, {}).get(entry_id)
         return list(value) if isinstance(value, list) else value
 
-    return {"drafted": drafted, "saved": copy(SAVED_STORE), "placement": copy(PLACEMENT_STORE), "keep": copy(KEEP_STORE),
-            "keep_widget": st.session_state.get(keep_key(entry_id)), "placement_widget": st.session_state.get(placement_key(entry_id))}
+    return {"drafted": drafted, "saved": copy(SAVED_STORE), "placement": copy(PLACEMENT_STORE),
+            "placement_widget": st.session_state.get(placement_key(entry_id))}
 
 
 def restore(entry_id, snap):
@@ -150,7 +154,7 @@ def restore(entry_id, snap):
     if not snap:
         return
     st.session_state.setdefault(DRAFTS_KEY, {})[entry_id] = snap["drafted"]
-    for store, name in ((SAVED_STORE, "saved"), (PLACEMENT_STORE, "placement"), (KEEP_STORE, "keep")):
+    for store, name in ((SAVED_STORE, "saved"), (PLACEMENT_STORE, "placement")):
         if snap[name] is not None:
             st.session_state.setdefault(store, {})[entry_id] = snap[name]
 
@@ -158,8 +162,8 @@ def restore(entry_id, snap):
 def forget(entry_id):
     """Drops a rejected request's draft and every choice made about it."""
     st.session_state.get(DRAFTS_KEY, {}).pop(entry_id, None)
-    for store in (PLACEMENT_STORE, KEEP_STORE, SAVED_STORE):
+    for store in (PLACEMENT_STORE, SAVED_STORE):
         st.session_state.get(store, {}).pop(entry_id, None)
+    unapply(entry_id)
     _close(entry_id)
-    st.session_state.pop(keep_key(entry_id), None)
     st.session_state.pop(placement_key(entry_id), None)

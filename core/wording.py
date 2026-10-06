@@ -305,6 +305,38 @@ def figure_swap(old, quote, request_text):
 
 
 # ---------------------------------------------------------------------------------------- applying changes
+_LABEL_ANY = re.compile(r"^\s*(?:\(\d+\)|\d+\)|\([a-z]\)|[a-z]\))\s+", re.IGNORECASE)
+_TAIL = re.compile(r"\s*(?:;\s*(?:or|and)|[;.,])\s*$", re.IGNORECASE)
+
+
+def split_point(text):
+    """(label, body, ending) of a list point: "6) any change in law; or" -> ("6)", "any change in law", "; or"). A text with no label or
+    no ending has "" for it."""
+    t = norm(text)
+    m = _LABEL_ANY.match(t)
+    label, body = (t[:m.end()].strip(), t[m.end():]) if m else ("", t)
+    m2 = _TAIL.search(body)
+    ending = m2.group(0).strip() if m2 else ""
+    return label, (body[:m2.start()] if m2 else body).strip(), ending
+
+
+def core_text(text):
+    """What a list point says, whatever its number or the punctuation at its end: those move when a neighbouring point is taken out."""
+    return split_point(text)[1].lower()
+
+
+def _find_for_edit(clause, old):
+    """The unit a recorded change is about. The text as it was recorded; or, for a lettered point, the point that says the same whatever its
+    number and ending are now, so that changes to neighbouring points of one list do not depend on the order they are applied in."""
+    wanted = norm(old)
+    exact = [(loc, text) for loc, text in units(clause) if norm(text) == wanted]
+    if exact:
+        return exact[0]
+    core = core_text(old)
+    like = [(loc, text) for loc, text in units(clause) if loc[0] == "lettered" and core and core_text(text) == core]
+    return like[0] if len(like) == 1 else None
+
+
 def apply_edits(library, edits, failed=None):
     """Writes each accepted change into `library` in place. An edit is {"id", "clause_key", "change_type", "old", "new",
     "summary"}. One whose sentence is no longer there (the clause text changed since) is not applied; it is added to `failed`."""
@@ -319,10 +351,10 @@ def apply_edits(library, edits, failed=None):
                 clause.plain_paragraphs.append(edit["new"])
             ok = True
         elif clause is not None:
-            for loc, text in units(clause):
-                if norm(text) == norm(edit["old"]):
-                    ok = _delete(clause, loc) if edit["change_type"] == "remove" else (_write(clause, loc, edit["new"]) or True)
-                    break
+            found = _find_for_edit(clause, edit["old"])
+            if found is not None:
+                loc = found[0]
+                ok = _delete(clause, loc) if edit["change_type"] == "remove" else (_write(clause, loc, edit["new"]) or True)
         if not ok and failed is not None:
             failed.append(edit)
     return library
@@ -334,8 +366,9 @@ def _write(clause, loc, text):
         clause.plain_paragraphs[loc[1]] = text
     elif kind == "item":
         clause.items[loc[1]].text = text
-    elif kind == "lettered":
-        clause.items[loc[1]].lettered[loc[2]] = text
+    elif kind == "lettered":                                      # the point keeps the number and the ending it has now
+        label, _, ending = split_point(clause.items[loc[1]].lettered[loc[2]])
+        clause.items[loc[1]].lettered[loc[2]] = (label + " " if label else "") + split_point(text)[1] + ending
     else:
         _, t, r, c = loc
         clause.tables[t]["rows"][r][c] = text

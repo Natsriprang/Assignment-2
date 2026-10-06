@@ -13,8 +13,8 @@ from core.draft_state import library_for
 from core.header import build_header
 from core.render import render_docx
 from core.renumber import renumber_and_render
-from core.wording import (apply_edits, check_rewrite, diff_markup, figure_mismatches, figure_swap, find_unit, norm, removable, removal_of,
-                          splice_fragment, unit_hits, units)
+from core.wording import (apply_edits, check_rewrite, core_text, diff_markup, figure_mismatches, figure_swap, find_unit, norm, removable,
+                          removal_of, split_point, splice_fragment, unit_hits, units)
 
 LD_QUOTE = "at the rate of 0.05 (zero point zero five) percent of the Contract Price per day"
 REQ = "Reduce the delay damages rate to 0.03% per day. reduce delay damages to 0.03% per day"
@@ -282,6 +282,78 @@ def test_a_new_wording_that_is_mostly_new_is_shown_plain_and_a_small_change_is_n
     before, after = diff_markup(sentence, sentence.replace("30 (thirty)", "15 (fifteen)"))
     assert "**15 (fifteen)**" in after and "**30 (thirty)**" in before and after.count("**") == 2, "a small change is marked"
     assert diff_markup("same", "same") == ("same", "same") and diff_markup("a b", "")[0] == "**a b**" and diff_markup("", "x y")[1] == "x y"
+
+
+# ---------------------------------------------------------------- changes to neighbouring points do not depend on their order
+def fm_edits():
+    c = clause("force_majeure")
+    p6 = c.items[1].lettered[5]
+    return ({"id": "e7", "clause_key": "force_majeure", "change_type": "remove", "old": "7) epidemic.", "new": "", "summary": "s"},
+            {"id": "e6", "clause_key": "force_majeure", "change_type": "remove", "old": p6, "new": "", "summary": "s"})
+
+
+def points(edits):
+    failed = []
+    lib = library_for({}, edits=list(edits), failed=failed)
+    return [p for p in clause("force_majeure", lib).items[1].lettered], [f["id"] for f in failed]
+
+
+def test_two_points_of_one_list_can_be_taken_out_together_in_either_order():
+    e7, e6 = fm_edits()
+    a, failed_a = points([e7, e6])
+    b, failed_b = points([e6, e7])
+    assert a == b and failed_a == [] and failed_b == []
+    assert [p[:2] for p in a] == ["1)", "2)", "3)", "4)", "5)"] and a[-1].endswith("government intervention.") and all(p.endswith("; or") for p in a[:-1])
+
+
+def test_taking_one_of_them_back_leaves_the_other_working():
+    e7, e6 = fm_edits()
+    only6, failed = points([e6])
+    assert failed == [] and only6[-1].startswith("6) epidemic.") and len(only6) == 6
+    only7, failed = points([e7])
+    assert failed == [] and only7[-1].startswith("6) any change in law or government action.") and len(only7) == 6
+
+
+def test_a_wording_change_to_a_point_and_the_removal_of_its_neighbour_work_in_either_order():
+    e7, _ = fm_edits()
+    c = clause("force_majeure")
+    p3 = c.items[1].lettered[2]
+    modify = {"id": "m3", "clause_key": "force_majeure", "change_type": "modify", "old": p3, "new": p3.replace("protests and/or other strikes", "protests and/or any strikes"), "summary": "s"}
+    gone = {"id": "g1", "clause_key": "force_majeure", "change_type": "remove", "old": c.items[1].lettered[0], "new": "", "summary": "s"}
+    for order in ([gone, modify], [modify, gone]):
+        got, failed = points(order)
+        assert failed == [] and got[1].startswith("2) ") and "any strikes" in got[1] and got[1].endswith("; or") and len(got) == 6, order
+    last = {"id": "m7", "clause_key": "force_majeure", "change_type": "modify", "old": "7) epidemic.", "new": "7) epidemic and pandemic.", "summary": "s"}
+    got, failed = points([last, {"id": "x", "clause_key": "force_majeure", "change_type": "remove", "old": c.items[1].lettered[5], "new": "", "summary": "s"}])
+    assert failed == [] and got[-1] == "6) epidemic and pandemic." and got[-2].endswith("; or")
+
+
+def test_a_point_is_found_by_what_it_says_not_by_its_number_or_ending():
+    assert split_point("6) any change in law; or") == ("6)", "any change in law", "; or")
+    assert split_point("(a) x; and")[:2] == ("(a)", "x") and split_point("(a) x; and")[2].replace(" ", "") == ";and"
+    assert core_text("6) any change in law or government action; or") == core_text("5) Any change in law or government action.") == "any change in law or government action"
+    assert core_text("plain sentence.") == "plain sentence" and core_text("") == ""
+
+
+def test_two_points_that_say_the_same_are_not_guessed_between():
+    library = library_for({})
+    c = clause("force_majeure", library)
+    c.items[1].lettered.append("9) epidemic.")
+    failed = []
+    apply_edits(library, [{"id": "d", "clause_key": "force_majeure", "change_type": "remove", "old": "8) epidemic.", "new": "", "summary": "s"}], failed)
+    assert len(failed) == 1, "two points say 'epidemic': the recorded number is not there any more, so nothing is guessed"
+
+
+def test_a_change_that_rewrote_a_whole_sentence_still_needs_that_sentence():
+    LD_OLD, LD_NEW = old_ld(), new_ld()
+    first = {"id": "a", "clause_key": "completion_deadline", "change_type": "modify", "old": LD_OLD, "new": LD_NEW, "summary": "s"}
+    second = {"id": "b", "clause_key": "completion_deadline", "change_type": "modify", "old": LD_NEW, "new": LD_NEW.replace("per day", "each day"), "summary": "s"}
+    failed = []
+    library_for({}, edits=[second], failed=failed)
+    assert [f["id"] for f in failed] == ["b"], "built on the first change, it cannot stand without it"
+    failed = []
+    library_for({}, edits=[first, second], failed=failed)
+    assert failed == []
 
 
 # ---------------------------------------------------------------- applying
