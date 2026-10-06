@@ -17,7 +17,7 @@ def complete(**over):
                    signing_place_choice="owner", owner_name="Owner Co.", owner_country="Singapore", owner_reg_no="1020304050601",
                    owner_signatory="Nat Sriprang", owner_address="1 Owner Road", contractor_name="Sun Build", contractor_reg_no="3533555555555",
                    contractor_signatory="Noom Sriprang", contractor_address="2 Builder Road", contract_price_number="100000",
-                   contract_price_words="One-hundred Thousand", attachment_no="3", vat_treatment="exclusive", deadline_mode="calendar",
+                   contract_price_words="One-hundred Thousand", vat_treatment="exclusive", deadline_mode="calendar",
                    start_date="3 October 2026", completion_date="10 October 2026",
                    owner_contact_name="John", owner_contact_position="Director", owner_contact_location="Bangkok",
                    owner_contact_phone="02", owner_contact_email="j@o.example", contractor_contact_name="Jan",
@@ -98,9 +98,9 @@ def test_removing_a_signatory_name_is_reported_by_the_name_the_page_uses():
 
 def test_blanks_across_the_form():
     got = blank_fields(complete(contract_price_words="", owner_contact_email="", contractor_contact_phone="", project_location="",
-                                contract_date="", attachment_no="", owner_country=""))
+                                contract_date="", owner_country=""))
     assert got == ["Project location", "Contract date", "Owner \u2013 Country of registration", "Contract price \u2013 Price (in words)",
-                   "Attachment no. that yields to the Agreement", "Owner contact \u2013 Email", "Contractor contact \u2013 Phone"]
+                   "Owner contact \u2013 Email", "Contractor contact \u2013 Phone"]
 
 
 def test_the_place_of_signing_counts_as_blank_when_nothing_is_chosen_or_the_address_is_empty():

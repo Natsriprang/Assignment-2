@@ -17,11 +17,11 @@ from core.term_sheet_fields import Installment, TermSheet, ensure_fields, signin
 
 
 def full(**over):
-    ts = TermSheet(project_name="Rooftop PV", project_location="Bangkok", capacity="500", contract_no="C-1", contract_date="1 Nov 2026",
+    ts = TermSheet(owner_witnesses="Ploy Wong", contractor_witnesses="Mali Chan", project_name="Rooftop PV", project_location="Bangkok", capacity="500", contract_no="C-1", contract_date="1 Nov 2026",
                    owner_name="Solar Owner Co., Ltd.", owner_country="Singapore", owner_reg_no="O-1", owner_address="1 Owner Road, Bangkok",
                    contractor_name="Sun Build Co., Ltd.", contractor_reg_no="C-2", contractor_address="2 Builder Road, Bangkok",
                    contract_price_number="10000000", contract_price_words="ten million baht", vat_treatment="exclusive",
-                   attachment_no="3", deadline_mode="period", completion_days="120",
+                   deadline_mode="period", completion_days="120",
                    signing_place_choice="owner", owner_signatory="Nat Sriprang", contractor_signatory="Noom Sriprang",
                    owner_contact_name="John Smith", owner_contact_position="Director", owner_contact_location="1 Owner Road, Bangkok",
                    owner_contact_phone="02-111-2222", owner_contact_email="john@owner.example",
@@ -63,10 +63,10 @@ def test_capacity_and_location_in_clause_one():
     assert "(\u201cWorks\u201d) at [*] in accordance" in text(project_location="")
 
 
-def test_attachment_number():
-    para = lambda **o: clause(library_for({}, None, None, full(**o)), "attachments").plain_paragraphs[1]
-    assert "this Agreement and Attachment 3, the provisions" in para()
-    assert "Attachment [*], the provisions" in para(attachment_no="")
+def test_the_term_sheet_has_no_attachment_number_any_more():
+    assert not hasattr(TermSheet(), "attachment_no")
+    from core.field_titles import FIELD_TITLES
+    assert "attachment_no" not in FIELD_TITLES
 
 
 def test_price_and_its_words():
@@ -216,7 +216,7 @@ def test_a_sentence_with_a_different_number_of_blanks_is_left_alone():
 def test_only_the_intended_clauses_change():
     before = {c.key: ([*c.plain_paragraphs], [i.text for i in c.items]) for c in library_for({})}
     after = {c.key: ([*c.plain_paragraphs], [i.text for i in c.items]) for c in library_for({}, None, None, full())}
-    assert sorted(k for k in before if before[k] != after[k]) == ["attachments", "completion_deadline", "construction_terms", "price_payment"]
+    assert sorted(k for k in before if before[k] != after[k]) == ["completion_deadline", "construction_terms", "price_payment"]
     tables = lambda lib: {c.key: [r[:] for t in c.tables for r in t["rows"]] for c in lib}
     assert sorted(k for k, v in tables(library_for({}, None, None, full())).items() if v != tables(library_for({})).get(k)) == ["notice", "price_payment"]
 
@@ -283,7 +283,7 @@ def test_the_defaults_and_old_objects():
     ts = TermSheet()
     assert ts.payment_days == "30" and ts.contractor_country == "Thailand" and ts.owner_country == "" and ts.signing_place_choice == ""
     old = ensure_fields(SimpleNamespace(project_name="P"))
-    assert (old.payment_days, old.contractor_country, old.owner_country, old.attachment_no) == ("30", "Thailand", "", "")
+    assert (old.payment_days, old.contractor_country, old.owner_country, old.owner_witnesses) == ("30", "Thailand", "", "")
     assert int_words(30) == "thirty" and parse_decimal("1,000.50") and parse_decimal("0") is None and parse_decimal("x") is None
 
 

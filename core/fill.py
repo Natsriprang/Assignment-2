@@ -157,11 +157,6 @@ def fill_template(library, term_sheet):
         text = construction.plain_paragraphs[0].replace(f"{BLANK} kWp", f"{BLANK} {unit}")
         construction.plain_paragraphs[0] = fill_slots(text, [number, _text(ts, "project_location") or None])
 
-    attachments = by_key.get("attachments")
-    if attachments and len(attachments.plain_paragraphs) > 1 and _text(ts, "attachment_no"):
-        attachments.plain_paragraphs[1] = attachments.plain_paragraphs[1].replace(
-            f"Attachment {BLANK}", f"Attachment {_text(ts, 'attachment_no')}")
-
     price = parse_decimal(_text(ts, "contract_price_number"))
     price_item = _item(price_clause, 0)
     if price_item:

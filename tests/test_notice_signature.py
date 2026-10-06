@@ -15,7 +15,7 @@ from core.field_rules import split_names
 from core.header import build_header
 from core.render import render_docx
 from core.renumber import renumber_and_render
-from core.signatures import CLOSING, SIGNATURE_LINE, build_signature_block, signature_texts
+from core.signatures import CLOSING, SIGNATURE_LINE, build_signature_block, names_of, signature_texts
 from core.term_sheet_fields import TermSheet
 from tests.test_fill import clause, full
 
@@ -62,17 +62,46 @@ def test_filling_twice_changes_nothing_more():
 def test_each_party_has_its_company_and_a_signing_line_per_signatory():
     block = build_signature_block(full())
     assert block["closing"] == CLOSING and [p["role"] for p in block["parties"]] == ["Owner", "Contractor"]
-    assert block["parties"][0]["lines"] == ["OWNER", "Solar Owner Co., Ltd.", "", SIGNATURE_LINE, "Nat Sriprang", "Authorised signatory"]
-    assert block["parties"][1]["lines"] == ["CONTRACTOR", "Sun Build Co., Ltd.", "", SIGNATURE_LINE, "Noom Sriprang", "Authorised signatory"]
+    assert block["parties"][0]["lines"] == ["OWNER", "Solar Owner Co., Ltd.", "", SIGNATURE_LINE, "Nat Sriprang", "Authorised signatory",
+                                            "", SIGNATURE_LINE, "Ploy Wong", "Witness"]
+    assert block["parties"][1]["lines"] == ["CONTRACTOR", "Sun Build Co., Ltd.", "", SIGNATURE_LINE, "Noom Sriprang", "Authorised signatory",
+                                            "", SIGNATURE_LINE, "Mali Chan", "Witness"]
 
 
 def test_several_signatories_each_get_a_line_and_a_missing_name_is_a_blank():
     lines = build_signature_block(full(owner_signatory="Nat Sriprang\nSomchai Jaidee"))["parties"][0]["lines"]
-    assert lines[2:] == ["", SIGNATURE_LINE, "Nat Sriprang", "Authorised signatory", "", SIGNATURE_LINE, "Somchai Jaidee", "Authorised signatory"]
+    assert lines[2:] == ["", SIGNATURE_LINE, "Nat Sriprang", "Authorised signatory", "", SIGNATURE_LINE, "Somchai Jaidee", "Authorised signatory",
+                         "", SIGNATURE_LINE, "Ploy Wong", "Witness"]
     assert split_names("A B; C D, E F & G H and I J\nK L") == ["A B", "C D", "E F", "G H", "I J", "K L"] and split_names("  ") == []
     blank = build_signature_block(full(owner_signatory="", contractor_name=""))
-    assert blank["parties"][0]["lines"][-2] == "[*]" and blank["parties"][1]["lines"][1] == "[*]"
+    assert blank["parties"][0]["lines"][4] == "[*]" and blank["parties"][1]["lines"][1] == "[*]"
     assert build_signature_block(None)["parties"][0]["lines"][1] == "[*]"
+
+
+def test_witnesses_sign_under_the_authorised_signatories_of_their_own_party_and_more_can_be_added():
+    owner = build_signature_block(full(owner_signatory="Nat Sriprang\nSomchai Jaidee", owner_witnesses="Ploy Wong\nKanya Rit"))["parties"][0]["lines"]
+    titles = [x for x in owner if x in ("Authorised signatory", "Witness")]
+    assert titles == ["Authorised signatory", "Authorised signatory", "Witness", "Witness"], "all the signatories first, then the witnesses"
+    assert owner[2:] == ["", SIGNATURE_LINE, "Nat Sriprang", "Authorised signatory", "", SIGNATURE_LINE, "Somchai Jaidee", "Authorised signatory",
+                         "", SIGNATURE_LINE, "Ploy Wong", "Witness", "", SIGNATURE_LINE, "Kanya Rit", "Witness"]
+    contractor = build_signature_block(full(owner_witnesses="Ploy Wong\nKanya Rit"))["parties"][1]["lines"]
+    assert contractor.count("Witness") == 1 and "Ploy Wong" not in contractor, "each party has its own witnesses"
+
+
+def test_a_party_without_a_witness_name_still_has_one_witness_line_with_a_blank():
+    for empty in ("", "  \n "):
+        lines = build_signature_block(full(owner_witnesses=empty))["parties"][0]["lines"]
+        assert lines[-4:] == ["", SIGNATURE_LINE, "[*]", "Witness"]
+    assert build_signature_block(None)["parties"][1]["lines"][-4:] == ["", SIGNATURE_LINE, "[*]", "Witness"]
+    ts = full(owner_witnesses="")
+    found = find_blanks(build_header(ts), renumber_and_render(library_for({}, None, None, ts)), build_signature_block(ts))
+    assert [b.where for b in found] == ["Signature block"], "the missing witness name is listed as a blank"
+
+
+def test_one_name_per_line_when_there_are_line_breaks_and_the_old_separators_when_there_are_not():
+    assert names_of("Somchai Jaidee, Dr.\nNat Sriprang") == ["Somchai Jaidee, Dr.", "Nat Sriprang"], "a comma in a name is kept when names are on separate lines"
+    assert names_of("Nat Sriprang; Somchai Jaidee") == ["Nat Sriprang", "Somchai Jaidee"]
+    assert names_of("") == [] and names_of(None) == [] and names_of("\n \n") == []
 
 
 # ---------------------------------------------------------------- blanks
@@ -119,8 +148,9 @@ def test_the_word_file_ends_with_the_signature_block():
     last = d.tables[-1]
     assert len(last.rows) == 1 and len(last.columns) == 2
     owner, contractor = last.rows[0].cells
-    assert [p.text for p in owner.paragraphs] == ["OWNER", "Solar Owner Co., Ltd.", "", SIGNATURE_LINE, "Nat Sriprang", "Authorised signatory"]
-    assert [p.text for p in contractor.paragraphs][-2:] == ["Noom Sriprang", "Authorised signatory"]
+    assert [p.text for p in owner.paragraphs] == ["OWNER", "Solar Owner Co., Ltd.", "", SIGNATURE_LINE, "Nat Sriprang", "Authorised signatory",
+                                                  "", SIGNATURE_LINE, "Ploy Wong", "Witness"]
+    assert [p.text for p in contractor.paragraphs][-2:] == ["Mali Chan", "Witness"], "the witnesses come last in the column"
     assert owner.paragraphs[0].runs[0].bold and not owner.paragraphs[1].runs[0].bold
     order = list(d.element.body.iterchildren())
     closing = next(pp for pp in d.paragraphs if pp.text == CLOSING)

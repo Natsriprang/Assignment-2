@@ -86,13 +86,11 @@ def show_result(ts):
         st.warning(f"The AI check found {len(issues)} point(s) to look at. Nothing was changed.")
         for i in issues:
             st.warning(f"**{plain(title(i.field))}**: {plain(i.problem)} The term sheet says \u201c{plain(i.evidence)}\u201d.")
-    # "Nothing to flag" is only said when nothing was flagged anywhere: next to a warning it would contradict it.
+    # The all-clear is only said when nothing was flagged anywhere: next to a warning it would contradict it.
     found_something = bool(result["code"]) or bool(issues)
-    if not found_something:
-        st.caption("Exact checks: nothing to flag.")
     if "note" in result:
         st.warning(plain(result["note"]))
     elif not found_something:
-        st.caption("AI check: nothing to flag.")
+        st.markdown(":green[\u2713] AI check: aligned with term sheet.")
     if found_something or "note" in result:
         st.caption("You can continue with these warnings, or fix them and press Recheck.")

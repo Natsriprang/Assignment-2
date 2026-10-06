@@ -9,6 +9,7 @@ from core.capacity import UNITS, parse_capacity
 from core.clause_params import PARAMS
 from core.conditions import CONDITION_CLAUSES
 from core.deadline import deadline_choice, deadline_warning, is_days
+from core.field_rules import split_names
 from core.term_sheet_fields import TermSheet, Installment, ensure_fields, missing_required, signing_place
 from core.vat import vat_choice, vat_warning
 from core.xlsx_parser import FIELD_LABELS, parse_xlsx_report
@@ -44,6 +45,30 @@ def show_import_report():
                    + ", ".join(rep["missing"]) + ".")
     for note in rep["conflicts"]:
         st.warning(note)
+
+
+def _add_one(count_key):
+    st.session_state[count_key] = st.session_state.get(count_key, 1) + 1
+
+
+def _lines(text):
+    return [line.strip() for line in (text or "").splitlines() if line.strip()]
+
+
+def name_list(ts, attr, label, prefix, v, add_label, split):
+    """One input per name (at least one), with a button that adds another. The names are kept in the term sheet field `attr`, one per
+    line, so the contract (signature block) and the checks read them from there. An import starts the lists again from what it found."""
+    count_key = f"{prefix}_count_{v}"
+    existing = split(getattr(ts, attr, ""))
+    if count_key not in st.session_state:
+        st.session_state[count_key] = max(1, len(existing))
+    count = max(1, st.session_state[count_key])
+    values = []
+    for i in range(count):
+        values.append(st.text_input(label if count == 1 else f"{label} {i + 1}", existing[i] if i < len(existing) else "",
+                                    key=f"{prefix}_{i}_{v}"))
+    setattr(ts, attr, "\n".join(x.strip() for x in values if x.strip()))
+    st.button(add_label, key=f"{prefix}_add_{v}", on_click=_add_one, args=(count_key,))
 
 
 def render():
@@ -120,14 +145,16 @@ def render():
         ts.owner_name = st.text_input("Company name", ts.owner_name, key=f"own_name_{v}")
         ts.owner_country = st.text_input("Country of registration", ts.owner_country, key=f"own_country_{v}")
         ts.owner_reg_no = st.text_input("Registration no.", ts.owner_reg_no, key=f"own_reg_{v}")
-        ts.owner_signatory = st.text_input("Authorised signatory", ts.owner_signatory, key=f"own_sig_{v}")
+        name_list(ts, "owner_signatory", "Authorised signatory", "own_sig", v, "Add signatory", split_names)
+        name_list(ts, "owner_witnesses", "Witness", "own_wit", v, "Add witness", _lines)
         ts.owner_address = st.text_input("Registered address", ts.owner_address, key=f"own_addr_{v}")
     with c2:
         st.markdown("**Contractor**")
         ts.contractor_name = st.text_input("Company name", ts.contractor_name, key=f"con_name_{v}")
         ts.contractor_country = st.text_input("Country of registration", ts.contractor_country, key=f"con_country_{v}")
         ts.contractor_reg_no = st.text_input("Registration no.", ts.contractor_reg_no, key=f"con_reg_{v}")
-        ts.contractor_signatory = st.text_input("Authorised signatory", ts.contractor_signatory, key=f"con_sig_{v}")
+        name_list(ts, "contractor_signatory", "Authorised signatory", "con_sig", v, "Add signatory", split_names)
+        name_list(ts, "contractor_witnesses", "Witness", "con_wit", v, "Add witness", _lines)
         ts.contractor_address = st.text_input("Registered address", ts.contractor_address, key=f"con_addr_{v}")
 
     st.subheader("Contract price")
@@ -175,11 +202,6 @@ def render():
             st.error("Completion: enter a whole number of days from 1 to 999.")
     if deadline_warning(ts):
         st.error("\u2757 " + deadline_warning(ts))
-
-    st.subheader("Contract documents")
-    ts.attachment_no = st.text_input("Attachment no. that yields to the Agreement", ts.attachment_no, key=f"attach_{v}",
-                                     help="The attachments clause says that if the Agreement and this attachment differ, "
-                                          "the Agreement prevails.")
 
     st.subheader("Limits")
     st.caption("Caps written into the contract. Tick \"No cap\" to take a cap out of the wording.")
