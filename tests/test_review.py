@@ -1,5 +1,5 @@
-"""Tests for the review round (ai/review.py): two calls every time, narrow findings, evidence checked in two places, fixes checked by code,
-and the temperature of every call. Run: python -m tests.test_review"""
+"""Tests for the review round (ai/review.py): two independent reads, only what both reads found is a finding, narrow findings, evidence
+checked in two places, fixes checked by code, and the temperature of every call. Run: python -m tests.test_review"""
 import json
 import sys
 from pathlib import Path
@@ -9,7 +9,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import ai.llm as llm
 from ai.llm import AIStepError, chat_create
-from ai.review import (MAX_FINDINGS, Section, build_schema, build_second_schema, dependency_findings, review_draft, sections_of)
+from ai.review import (CHANGES_PROMPT, MAX_FINDINGS, READ_FROM_CHANGES, READ_FROM_TERM_SHEET, TERM_SHEET_PROMPT, Section, build_schema,
+                       dependency_findings, review_draft, sections_of)
 from core.clauses import Clause, Item
 from core.draft_state import library_for
 
@@ -23,16 +24,16 @@ CHANGES = [{"id": "c1", "kind": "wording_change", "clause": "Completion Deadline
 
 
 class SeqClient:
-    """Returns the payloads one after the other; `refuse_at` is the index of a call the model refuses."""
-    def __init__(self, *payloads, refuse_at=None):
-        self.payloads, self.refuse_at, self.calls = list(payloads), refuse_at, []
+    """Returns the payloads one after the other; `refuse_at` is the index (or indexes) of a call the model refuses."""
+    def __init__(self, *payloads, refuse_at=()):
+        self.payloads, self.calls = list(payloads), []
+        self.refuse_at = {refuse_at} if isinstance(refuse_at, int) else set(refuse_at)
         self.chat = SimpleNamespace(completions=SimpleNamespace(create=self._create))
 
     def _create(self, **kwargs):
         n = len(self.calls)
         self.calls.append(kwargs)
-        refusal = "no" if n == self.refuse_at else None
-        msg = SimpleNamespace(content=json.dumps(self.payloads[min(n, len(self.payloads) - 1)]), refusal=refusal)
+        msg = SimpleNamespace(content=json.dumps(self.payloads[min(n, len(self.payloads) - 1)]), refusal="no" if n in self.refuse_at else None)
         return SimpleNamespace(choices=[SimpleNamespace(message=msg, finish_reason="stop")])
 
 
@@ -47,52 +48,134 @@ def first(*findings):
     return {"findings": list(findings)}
 
 
-def second(*ids, decline=()):
-    return {"verdicts": [{"finding_id": i, "confirm": True, "reason": "ok"} for i in ids]
-            + [{"finding_id": i, "confirm": False, "reason": "Not the same matter."} for i in decline]}
-
-
 def run(client, sections=None, ts_text=TS_TEXT, changes=CHANGES):
     return review_draft(ts_text, SECTIONS if sections is None else sections, client, changes=changes)
 
 
-def one(payload_first, sections=None, ts_text=TS_TEXT, changes=CHANGES):
-    """The findings of a run whose second look confirms everything the first one found."""
-    n = len(payload_first["findings"])
-    return run(SeqClient(payload_first, second(*[f"f{i}" for i in range(1, n + 1)])), sections, ts_text, changes)
+def one(payload, sections=None, ts_text=TS_TEXT, changes=CHANGES):
+    """The result of a run in which both reads say the same."""
+    return run(SeqClient(payload, payload), sections, ts_text, changes)
 
 
-# ---------------------------------------------------------------- always two calls
-def test_two_calls_are_made_even_when_the_first_finds_nothing():
-    client = SeqClient(first(), second())
+def pair(p1, p2, **kw):
+    return run(SeqClient(p1, p2), **kw)
+
+
+# ---------------------------------------------------------------- always two calls, two independent reads
+def test_two_calls_are_made_even_when_nothing_is_found():
+    client = SeqClient(first(), first())
     result = run(client)
-    assert len(client.calls) == 2 and result.findings == [] and result.second_look_done
-    assert "FINDINGS OF THE FIRST CHECK:\n(the first check found nothing)" in client.calls[1]["messages"][1]["content"]
+    assert len(client.calls) == 2 and result.findings == [] and result.single == [] and result.both_done
 
 
-def test_the_second_call_is_given_the_findings_with_their_ids_and_evidence():
-    client = SeqClient(first(finding()), second("f1"))
+def test_the_two_reads_get_the_same_input_and_neither_sees_the_other_ones_answer():
+    client = SeqClient(first(finding()), first(finding()))
     run(client)
-    content = client.calls[1]["messages"][1]["content"]
-    assert "[f1] kind: term_sheet_mismatch | section: completion_deadline" in content and "term sheet says: delay damages 0.03% per day" in content
-    assert "quote: 0.05 (zero point zero five)" in content and "CHANGED SENTENCES:" in content and "TERM SHEET:" in content
+    users = [c["messages"][1]["content"] for c in client.calls]
+    assert users[0] == users[1] and "FINDINGS" not in users[0] and "0.05 (zero point zero five)" in users[0] and "TERM SHEET:" in users[0]
+
+
+def test_the_two_reads_start_from_opposite_ends():
+    client = SeqClient(first(), first())
+    run(client)
+    assert [c["messages"][0]["content"] for c in client.calls] == [TERM_SHEET_PROMPT, CHANGES_PROMPT]
+    assert "start from the term sheet" in TERM_SHEET_PROMPT and "start from the draft" in CHANGES_PROMPT
+    assert "start from the draft" not in TERM_SHEET_PROMPT and "start from the term sheet" not in CHANGES_PROMPT
 
 
 def test_the_changed_sentences_are_listed_and_a_draft_with_no_change_says_so():
-    client = SeqClient(first(), second())
+    client = SeqClient(first(), first())
     run(client)
     assert "[c1 | a sentence changed or added | clause: Completion Deadline]" in client.calls[0]["messages"][1]["content"]
-    client = SeqClient(first(), second())
+    client = SeqClient(first(), first())
     run(client, changes=())
     assert "(none: the draft is the standard template)" in client.calls[0]["messages"][1]["content"]
 
 
-# ---------------------------------------------------------------- a difference from the term sheet and its fix
-def test_a_good_fix_is_kept_with_the_sentence_it_changes():
+# ---------------------------------------------------------------- only what both reads found is a finding
+def test_a_finding_both_reads_made_is_shown():
+    result = one(first(finding()))
+    f = result.findings[0]
+    assert (f.id, f.kind, f.clause_key, f.confirmed, f.route, f.source) == ("f1", "term_sheet_mismatch", "completion_deadline", True, "", "ai")
+    assert result.single == []
+
+
+def test_a_finding_only_one_read_made_is_listed_apart_with_the_read_that_made_it():
+    result = pair(first(finding()), first())
+    assert result.findings == [] and [(f.issue, f.route) for f in result.single] == [("The damages rate is not what the term sheet says.", READ_FROM_TERM_SHEET)]
+    result = pair(first(), first(finding()))
+    assert result.findings == [] and [f.route for f in result.single] == [READ_FROM_CHANGES]
+
+
+def test_quotes_that_overlap_are_the_same_finding():
+    longer = "at the rate of 0.05 (zero point zero five) percent"
+    assert longer in " ".join(LD_OLD.split())
+    result = pair(first(finding()), first(finding(quote=longer)))
+    assert len(result.findings) == 1 and result.single == []
+
+
+def test_findings_about_other_words_other_clauses_or_other_matters_are_not_the_same():
+    other_clause = Clause(key="other", title="Other", items=[Item(LD_OLD)], category="general")
+    sections = SECTIONS + [Section("other", "Other", LD_OLD, other_clause)]
+    result = pair(first(finding()), first(finding(clause_key="other")), sections=sections)
+    assert result.findings == [] and len(result.single) == 2
+    result = pair(first(finding()), first(finding(term_sheet_says="project_name: Rooftop PV")))
+    assert result.findings == [] and len(result.single) == 2, "the same sentence, but a different matter of the term sheet"
+    result = pair(first(finding()), first(finding(quote="liquidated damages", fix_type="none", new_text="")))
+    assert result.findings == [] and len(result.single) == 2
+
+
+def test_two_sentences_that_disagree_are_one_finding_whichever_is_named_first():
+    sections = [Section("a", "Termination", "The Owner may terminate on 30 (thirty) days notice."),
+                Section("b", "Notice", "A notice of termination takes effect after 45 (forty-five) days.")]
+    changes = [{"id": "c1", "kind": "wording_change", "clause": "Termination", "text": "The Owner may terminate on 30 (thirty) days notice. A notice of termination takes effect after 45 (forty-five) days."}]
+    straight = finding(kind="contradiction", clause_key="a", term_sheet_says="", quote="terminate on 30 (thirty) days notice", other_clause_key="b",
+                       other_quote="takes effect after 45 (forty-five) days", fix_type="none", new_text="", issue="Two different notice periods.")
+    swapped = finding(kind="contradiction", clause_key="b", term_sheet_says="", quote="takes effect after 45 (forty-five) days", other_clause_key="a",
+                      other_quote="terminate on 30 (thirty) days notice", fix_type="none", new_text="", issue="Notice periods differ.")
+    result = pair(first(straight), first(swapped), sections=sections, changes=changes)
+    f = result.findings[0]
+    assert len(result.findings) == 1 and (f.kind, f.clause, f.other_clause, f.fix_type) == ("contradiction", "Termination", "Notice", "none")
+    assert f.quote == "terminate on 30 (thirty) days notice" and f.other_quote == "takes effect after 45 (forty-five) days"
+
+
+def test_findings_are_numbered_and_come_in_the_order_of_the_draft():
+    sections = [Section("late", "Late", "The Owner pays within 10 days."), Section("early", "Early", "The Owner pays within 20 days.")]
+    changes = [{"id": "c1", "kind": "wording_change", "clause": "x", "text": "The Owner pays within 10 days. The Owner pays within 20 days."}]
+    payload = first(finding(clause_key="early", quote="pays within 20 days", fix_type="none", new_text=""),
+                    finding(clause_key="late", quote="pays within 10 days", fix_type="none", new_text=""))
+    result = one(payload, sections, TS_TEXT, changes)
+    assert [(f.id, f.clause_key) for f in result.findings] == [("f1", "late"), ("f2", "early")]
+
+
+def test_findings_are_capped():
+    many = [finding(issue=f"Found {n}.", quote="0.05 (zero point zero five)", term_sheet_says="delay damages 0.03% per day", fix_type="none", new_text="")
+            for n in range(MAX_FINDINGS + 3)]
+    result = one(first(*many))
+    assert len(result.findings) == MAX_FINDINGS and any("Kept the first" in n for n in result.notes)
+    assert [f.id for f in result.findings] == [f"f{n}" for n in range(1, MAX_FINDINGS + 1)]
+
+
+# ---------------------------------------------------------------- the fix the two reads agree on
+VARIANT = LD_NEW.replace("percent", "per cent", 1)
+
+
+def test_the_fix_both_reads_wrote_is_offered():
     f = one(first(finding())).findings[0]
-    assert (f.id, f.kind, f.clause_key, f.fix_type, f.confirmed, f.source) == ("f1", "term_sheet_mismatch", "completion_deadline", "modify", True, "ai")
-    assert f.old_text == " ".join(LD_OLD.split()) and f.new_text == " ".join(LD_NEW.split()) and f.fix_note == ""
-    assert f.term_sheet_says == "delay damages 0.03% per day" and f.quote == "0.05 (zero point zero five)"
+    assert f.fix_type == "modify" and f.old_text == " ".join(LD_OLD.split()) and f.new_text == " ".join(LD_NEW.split()) and f.fix_note == ""
+
+
+def test_the_fix_of_the_read_that_has_one_is_offered_when_the_other_has_none():
+    f = pair(first(finding(fix_type="none", new_text="")), first(finding())).findings[0]
+    assert f.fix_type == "modify" and f.new_text == " ".join(LD_NEW.split())
+    f = pair(first(finding()), first(finding(fix_type="none", new_text=""))).findings[0]
+    assert f.fix_type == "modify"
+
+
+def test_two_different_fixes_mean_no_fix():
+    assert one(first(finding(new_text=VARIANT))).findings[0].fix_type == "modify", "the variant is a valid fix on its own"
+    f = pair(first(finding()), first(finding(new_text=VARIANT))).findings[0]
+    assert f.fix_type == "none" and f.new_text == "" and "different fixes" in f.fix_note
 
 
 def test_a_figure_that_is_not_in_the_term_sheet_drops_the_fix_and_keeps_the_finding():
@@ -162,7 +245,7 @@ def test_with_changed_sentences_a_quote_must_be_inside_one_of_them():
 def test_term_sheet_words_that_are_not_in_the_term_sheet_leave_the_finding_out():
     result = one(first(finding(term_sheet_says="rate of 9% a day")))
     assert result.findings == [] and any("not found in the term sheet" in n for n in result.notes)
-    assert one(first(finding(term_sheet_says="")), ts_text=TS_TEXT).findings == [], "a difference from the term sheet needs words of the term sheet"
+    assert one(first(finding(term_sheet_says=""))).findings == [], "a difference from the term sheet needs words of the term sheet"
 
 
 def test_a_finding_that_says_the_draft_differs_when_it_already_says_it_is_left_out():
@@ -180,7 +263,6 @@ def test_a_real_difference_in_the_same_clause_stays():
     assert [f.issue for f in one(first(real), sections, "governing_law: Thailand\nproject_name: PV", changes).findings] == ["Governing law differs."]
 
 
-# ---------------------------------------------------------------- two sentences that say different things
 def two_sections():
     return [Section("a", "Termination", "The Owner may terminate on 30 (thirty) days notice."),
             Section("b", "Notice", "A notice of termination takes effect after 45 (forty-five) days.")]
@@ -193,11 +275,10 @@ def contradiction(**over):
     return finding(**base)
 
 
-def test_two_sentences_that_disagree_are_a_finding_with_two_quotes_and_no_fix():
+def test_a_contradiction_has_two_quotes_and_never_a_fix():
     changes = [{"id": "c1", "kind": "wording_change", "clause": "Termination", "text": "The Owner may terminate on 30 (thirty) days notice."}]
     f = one(first(contradiction(fix_type="modify", new_text="The Owner may terminate on 45 days notice.")), two_sections(), TS_TEXT, changes).findings[0]
     assert (f.kind, f.clause, f.other_clause, f.fix_type, f.new_text) == ("contradiction", "Termination", "Notice", "none", "")
-    assert f.quote == "terminate on 30 (thirty) days notice" and f.other_quote == "takes effect after 45 (forty-five) days"
 
 
 def test_a_contradiction_needs_its_second_quote_in_the_other_section_and_different_words():
@@ -207,10 +288,9 @@ def test_a_contradiction_needs_its_second_quote_in_the_other_section_and_differe
         assert one(first(bad), two_sections(), TS_TEXT, changes).findings == []
 
 
-# ---------------------------------------------------------------- findings that are not valid
 def test_an_unknown_clause_a_wrong_kind_or_an_empty_issue_drops_the_finding():
     result = one(first(finding(clause_key="no_such_clause"), finding(kind="style"), finding(issue="  ")))
-    assert result.findings == [] and result.notes.count("Dropped a finding that was not valid.") == 3
+    assert result.findings == [] and result.notes.count("Dropped a finding that was not valid.") == 6, "each of the two reads dropped three"
 
 
 def test_a_part_that_is_not_a_clause_has_findings_but_no_fix():
@@ -220,57 +300,25 @@ def test_a_part_that_is_not_a_clause_has_findings_but_no_fix():
 
 
 def test_a_draft_that_is_only_text_has_no_fixes():
-    sections = [Section("draft", "The draft", LD_OLD)]
-    f = one(first(finding(clause_key="draft")), sections, TS_TEXT, ()).findings[0]
+    f = one(first(finding(clause_key="draft")), [Section("draft", "The draft", LD_OLD)], TS_TEXT, ()).findings[0]
     assert f.fix_type == "none"
 
 
-# ---------------------------------------------------------------- the second look only confirms
-def test_a_finding_the_second_look_does_not_confirm_is_dropped_and_listed():
-    client = SeqClient(first(finding(), finding(issue="Another rate problem.", quote="liquidated damages", fix_type="none", new_text="")), second("f1", decline=("f2",)))
-    result = run(client)
-    assert [f.id for f in result.findings] == ["f1"] and result.findings[0].confirmed
-    assert result.dropped == [("f2", "Another rate problem.", "Not the same matter.")]
-
-
-def test_a_finding_the_second_look_says_nothing_about_is_dropped():
-    result = run(SeqClient(first(finding()), second()))
-    assert result.findings == [] and result.dropped[0][0] == "f1" and "did not confirm" in result.dropped[0][2]
-
-
-def test_the_second_look_cannot_add_a_finding():
-    payload2 = second("f1")
-    payload2["additional"] = [finding(issue="Something new.")]
-    payload2["verdicts"].append({"finding_id": "g1", "confirm": True, "reason": "new"})
-    result = run(SeqClient(first(finding()), payload2))
-    assert [f.id for f in result.findings] == ["f1"]
-    assert "additional" not in build_second_schema()["properties"]
-
-
-def test_findings_are_capped_and_come_in_the_order_of_the_draft():
-    many = [finding(issue=f"Found {n}.", quote="0.05 (zero point zero five)", fix_type="none", new_text="") for n in range(MAX_FINDINGS + 3)]
-    result = one(first(*many))
-    assert len(result.findings) == MAX_FINDINGS and any("Kept the first" in n for n in result.notes)
-    sections = [Section("late", "Late", "The Owner pays within 10 days."), Section("early", "Early", "The Owner pays within 20 days.")]
-    changes = [{"id": "c1", "kind": "wording_change", "clause": "x", "text": "The Owner pays within 10 days. The Owner pays within 20 days."}]
-    payload = first(finding(clause_key="early", quote="pays within 20 days", fix_type="none", new_text="", term_sheet_says="delay damages 0.03% per day"),
-                    finding(clause_key="late", quote="pays within 10 days", fix_type="none", new_text="", term_sheet_says="delay damages 0.03% per day"))
-    assert [f.clause_key for f in one(payload, sections, TS_TEXT, changes).findings] == ["late", "early"]
-
-
 # ---------------------------------------------------------------- when a call fails
-def test_a_failed_second_look_keeps_the_first_findings_as_not_confirmed_and_says_so():
-    result = run(SeqClient(first(finding()), second("f1"), refuse_at=1))
-    assert len(result.findings) == 1 and not result.findings[0].confirmed and not result.second_look_done
-    assert any("second look could not run" in n and "not confirmed" in n for n in result.notes)
+def test_when_one_read_fails_what_the_other_found_is_listed_apart_and_nothing_is_confirmed():
+    result = run(SeqClient(first(finding()), first(finding()), refuse_at=1))
+    assert result.findings == [] and not result.both_done and len(result.single) == 1
+    assert any("could not run" in n and "nothing could be confirmed" in n for n in result.notes)
+    result = run(SeqClient(first(finding()), first(finding()), refuse_at=0))
+    assert result.findings == [] and len(result.single) == 1
 
 
-def test_a_failed_first_call_raises():
+def test_when_both_reads_fail_the_error_is_raised():
     try:
-        run(SeqClient(first(), second(), refuse_at=0))
+        run(SeqClient(first(), first(), refuse_at=(0, 1)))
     except AIStepError:
         return
-    raise AssertionError("the first call's failure should be raised")
+    raise AssertionError("the failure should be raised")
 
 
 # ---------------------------------------------------------------- what the app finds by itself
@@ -297,26 +345,25 @@ def test_the_model_is_not_shown_the_payment_table():
     assert not any(" | ".join(table["headers"]) in s.text for s in SECTIONS)
 
 
-def test_the_schemas_allow_the_sections_two_kinds_and_a_second_quote():
+def test_the_schema_allows_the_sections_two_kinds_and_a_second_quote():
     props = build_schema(["a", "b"])["properties"]["findings"]["items"]["properties"]
     assert props["clause_key"]["enum"] == ["a", "b"] and props["other_clause_key"]["enum"] == ["a", "b", ""]
     assert props["kind"]["enum"] == ["term_sheet_mismatch", "contradiction"]
-    assert build_second_schema()["properties"]["verdicts"]["items"]["properties"]["finding_id"] == {"type": "string"}, "no enum: there may be no finding"
 
 
 # ---------------------------------------------------------------- the temperature of every call
 def test_every_call_is_made_with_temperature_zero_unless_told_otherwise():
-    client = SeqClient(first(), second())
+    client = SeqClient(first(), first())
     run(client)
     assert [c["temperature"] for c in client.calls] == [0.0, 0.0]
     saved = llm.TEMPERATURE
     try:
         llm.TEMPERATURE = ""
-        client = SeqClient(first(), second())
+        client = SeqClient(first(), first())
         run(client)
         assert all("temperature" not in c for c in client.calls)
         llm.TEMPERATURE = "0.3"
-        client = SeqClient(first(), second())
+        client = SeqClient(first(), first())
         run(client)
         assert [c["temperature"] for c in client.calls] == [0.3, 0.3]
     finally:

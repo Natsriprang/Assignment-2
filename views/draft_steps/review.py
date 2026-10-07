@@ -3,7 +3,7 @@
 - The app checks by itself, without AI, which clauses still refer to a clause that was taken out (core.dependencies). This is always
   shown, with no API key and no button.
 - The AI reads the term sheet and the sentences this draft changed or added compared with the template, with the whole draft for
-  reading, in two calls (a check, then a second look that only confirms or declines). It reports a sentence that says something different
+  reading, in two independent reads (one starts from the term sheet, the other from the changed sentences) and keeps only what both reads found. It reports a sentence that says something different
   from the term sheet, or two sentences that say different things about the same matter, each with its evidence quoted. A difference from
   the term sheet may come with a proposed fix: one sentence rewritten, or one added. Each fix has Apply, Edit and Reject like the requests
   in the Clauses step, and only Apply writes anything into the draft.
@@ -27,13 +27,13 @@ from core.signatures import build_signature_block, signature_texts
 from views import clause_sandbox
 from views.draft_steps import clauses, drafts, flow, risks, wording_state
 
-RESULT_KEY = "draft_review"                # {"snapshot", "run", "findings", "dropped", "notes", "second_look_done"} or {"snapshot", "error"}
+RESULT_KEY = "draft_review"                # {"snapshot", "input_snapshot", "run", "findings", "single", "notes", "both_done"} or {..., "error"}
 AUTO_KEY = "draft_review_auto"             # the draft the review was last started on by itself
 RUN_KEY = "draft_review_run"               # how many reviews were made: keeps the widgets of one review apart from the next
 STATUS_KEY = "draft_review_status"         # finding key -> {"state": "applied" | "rejected", "entry": {...}} for the current review
 NOTE_KEY = "draft_review_notes"            # finding key -> a sentence about why an Apply did not write anything
-FIRST_STEP = "review"
-SECOND_STEP = "review_second_look"
+FIRST_STEP = "review_term_sheet"            # the read that starts from the term sheet
+SECOND_STEP = "review_changes"             # the read that starts from the changed sentences
 
 
 def plain(text):
@@ -67,7 +67,7 @@ def snapshot():
 
 # ---------------------------------------------------------------------------- running it
 def run_review(client):
-    """Two AI calls now (the check and the second look); the result is stored with the draft it was made on."""
+    """Two AI calls now (the two reads); the result is stored with the draft it was made on."""
     ts_text, sections, changes = current_input()
     run = st.session_state.get(RUN_KEY, 0) + 1
     st.session_state[RUN_KEY] = run
@@ -80,7 +80,7 @@ def run_review(client):
         try:
             found = review_draft(ts_text, sections, CountingClient(client, calls, FIRST_STEP), MODEL,
                                  second_client=CountingClient(client, calls, SECOND_STEP), changes=changes)
-            result.update(findings=found.findings, dropped=found.dropped, notes=found.notes, second_look_done=found.second_look_done)
+            result.update(findings=found.findings, single=found.single, notes=found.notes, both_done=found.both_done)
         except AIStepError as e:
             result["error"] = str(e)
     st.session_state[RESULT_KEY] = result
@@ -190,7 +190,7 @@ def show_finding(run, f):
     key = fkey(run, f)
     status = st.session_state.get(STATUS_KEY, {}).get(key)
     with st.container(border=True):
-        tag = "Checked by the app, no AI" if f.source == "app" else ("Confirmed by the second look" if f.confirmed else "Not confirmed by a second look")
+        tag = "Checked by the app, no AI" if f.source == "app" else "Found by both reads"
         st.markdown(f"**{plain(f.clause)}**  \u00b7  {tag}")
         st.write(plain(f.issue))
         if f.why:
@@ -269,12 +269,13 @@ def show():
                            "and you can still download the draft.")
                 for f in result["findings"]:
                     show_finding(run, f)
-            else:
-                st.caption("No difference from the term sheet and no contradiction was found in the changes.")
-            if result["dropped"]:
-                with st.expander(f"{len(result['dropped'])} finding(s) the second look did not confirm"):
-                    for _, issue, reason in result["dropped"]:
-                        st.caption(f"{plain(issue)} \u2014 {plain(reason)}")
+            elif result["both_done"]:
+                st.caption("Both reads agree: no difference from the term sheet and no contradiction in the changes."
+                           if not result["single"] else "No finding was made by both reads.")
+            if result["single"]:
+                with st.expander(f"{len(result['single'])} finding(s) made by only one of the two reads (not shown as findings)"):
+                    for f in result["single"]:
+                        st.caption(f"{plain(f.clause)}: {plain(f.issue)} \u2014 \u201c{plain(f.quote)}\u201d (read: {f.route})")
     if client is not None:
         unchanged = result is not None and "error" not in result and result.get("input_snapshot") == snap
         pressed = st.button("Review again" if result is not None else "Review the draft", key="review_again", disabled=unchanged)
