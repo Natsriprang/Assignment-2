@@ -6,12 +6,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from ai.exsum import (CLAUSES_PROMPT, MAX_KEY_POINTS, OVERVIEW_PROMPT, build_clauses_schema, build_overview_schema, clauses_input, evaluate_clauses,
-                      summarise_contract, write_overview)
+from ai.exsum import (CLAUSES_PROMPT, MAX_KEY_POINTS, OVERVIEW_PROMPT, build_clauses_schema, build_overview_schema, changes_block, clauses_input,
+                      evaluate_clauses, summarise_contract, write_overview)
 from ai.llm import AIStepError
 from ai.review import Section
 from core.draft_state import library_for
-from core.exsum import allowed_figures, coverage_text, digit_figures, fact_rows, facts_text, unsupported_figures
+from core.exsum import allowed_figures, amount, coverage_text, digit_figures, fact_rows, facts_text, unsupported_figures
 from core.readiness import missing_before_sending
 from core.term_sheet_fields import TermSheet
 from tests.test_interpret import sample_term_sheet
@@ -39,9 +39,15 @@ OVERVIEW = {"overview": "The Owner pays THB 10,000,000 for the works. Delay cost
     {"clause_key": "completion_deadline", "text": "Delay damages are 0.5% a day up to 5%."}]}
 
 
-def run(clauses, overview=None, changed=(), taken_out=(), sections=None):
+def changes_for(keys):
+    """A change for each key, as the view makes them from the risk items."""
+    return {k: [{"before": "Old sentence of the template.", "after": "New sentence.", "user_words": ""}] for k in keys}
+
+
+def run(clauses, overview=None, changed=(), taken_out=(), sections=None, changes=None):
     client = SeqClient(clauses, overview or OVERVIEW)
-    return summarise_contract(TS_TEXT, SECTIONS if sections is None else sections, facts_text(fact_rows(TS)), set(changed), list(taken_out), client, "m"), client
+    changes = changes if changes is not None else changes_for(changed)
+    return summarise_contract(TS_TEXT, SECTIONS if sections is None else sections, facts_text(fact_rows(TS)), changes, list(taken_out), client, "m"), client
 
 
 # ---------------------------------------------------------------- the table of facts, by code
@@ -71,6 +77,15 @@ def test_the_signatories_and_what_is_missing_before_the_draft_is_sent():
     assert dict(fact_rows(ts))["Signatories"] == "Owner: Nat Sriprang; Contractor: Noom Sriprang"
     assert "the Owner's registration number" in missing_before_sending(TermSheet())
     assert missing_before_sending(TermSheet()).count("the Owner's registration number") == 1
+
+
+def test_amounts_are_written_with_separators_and_vat_in_full_words():
+    assert amount("100000") == "100,000" and amount("1,000,000") == "1,000,000" and amount("1500.5") == "1,500.50" and amount("1500.00") == "1,500"
+    assert amount("ten thousand") == "ten thousand" and amount(" 250 ") == "250"
+    for vat, shown in (("exclusive", "exclusive of VAT"), ("Not including VAT", "exclusive of VAT"), ("inclusive", "inclusive of VAT"), ("it depends", "it depends")):
+        ts = TermSheet(contract_price_number="100000", contract_price_words="One-hundred Thousand", vat_treatment=vat)
+        assert dict(fact_rows(ts))["Contract price"] == f"THB 100,000 (One-hundred Thousand), {shown}", vat
+    assert dict(fact_rows(TermSheet(contract_price_number="100000")))["Contract price"] == "THB 100,000"
 
 
 # ---------------------------------------------------------------- the figures
@@ -113,10 +128,39 @@ def test_a_summary_that_is_empty_counts_as_not_assessed():
 def test_that_a_clause_was_changed_comes_from_the_code_and_a_changed_clause_the_model_skipped_stays_marked():
     answer = clauses_answer(decision("price_payment", "skip", reason="Standard."), decision("completion_deadline", summary="Delay costs 0.5% a day, capped at 5%."),
                             decision("notice", "skip", reason="Standard."))
-    result, client = run(answer, changed={"price_payment", "completion_deadline"})
+    result, client = run(answer, changed=["completion_deadline", "price_payment"])
     got = {d.key: d for d in result.decisions}
     assert got["price_payment"].changed and got["price_payment"].decision == "skip" and got["completion_deadline"].changed and not got["notice"].changed
-    assert "CHANGED CLAUSES (keys): price_payment, completion_deadline" in client.calls[0]["messages"][1]["content"]
+    told = client.calls[0]["messages"][1]["content"]
+    assert "CHANGES MADE TO THE TEMPLATE:\n[key: price_payment | title: Price]" in told, "in the order of the draft, not the order the changes were given in"
+    assert told.index("[key: price_payment | title: Price]\n- sentence") < told.index("[key: completion_deadline | title: Completion Deadline]\n- sentence")
+
+
+# ---------------------------------------------------------------- what changed, from what to what
+def test_the_model_is_told_what_each_changed_clause_said_in_the_template_what_it_says_now_and_what_the_user_asked():
+    block = changes_block({"completion_deadline": [{"before": "Rate 0.05 (zero point zero five) percent.", "after": "Rate 0.5 (zero point five) percent.",
+                                                       "user_words": "increase the rate to 0.5%"}],
+                           "price_payment": [{"before": "", "after": "A new sentence.", "user_words": ""}],
+                           "notice": [{"before": "An old sentence.", "after": "", "user_words": ""}]}, {"completion_deadline": "Completion Deadline"})
+    assert "[key: completion_deadline | title: Completion Deadline]\n- sentence in the template: Rate 0.05 (zero point zero five) percent.\n- sentence now: Rate 0.5 (zero point five) percent.\n- the user asked: \u201cincrease the rate to 0.5%\u201d" in block
+    assert "- added: A new sentence." in block and "- taken out: An old sentence." in block
+    assert changes_block({}, {}) == "(none)"
+    told = clauses_input("ts", SECTIONS, {})
+    assert "TERM SHEET:\nts" in told and told.endswith("CHANGES MADE TO THE TEMPLATE:\n(none)")
+
+
+def test_a_changed_clause_may_say_the_figure_it_changed_from_and_the_figure_the_user_asked_for_but_an_unchanged_one_may_not():
+    changes = {"completion_deadline": [{"before": "Liquidated damages of 0.05 (zero point zero five) percent a day.", "after": "Liquidated damages of 0.5 (zero point five) percent a day.",
+                                         "user_words": "increase the rate to 0.5%"}]}
+    answer = clauses_answer(decision("price_payment", summary="The Owner pays THB 10,000,000; the rate was 0.05% once."),
+                            decision("completion_deadline", summary="The damages rate rises from 0.05% to 0.5% a day, capped at 5%."), decision("notice", "skip", reason="x"))
+    result, _ = run(answer, changes=changes)
+    got = {d.key: d for d in result.decisions}
+    assert got["completion_deadline"].decision == "summarise" and got["completion_deadline"].changed, "0.05 is in the sentence of the template"
+    assert got["price_payment"].removed, "0.05 is not in that clause, the term sheet or the changes of another clause"
+    result, _ = run(clauses_answer(decision("price_payment", "skip", reason="x"), decision("completion_deadline", summary="Damages rise from 0.07% to 0.5% a day."),
+                                   decision("notice", "skip", reason="x")), changes=changes)
+    assert {d.key: d for d in result.decisions}["completion_deadline"].removed, "0.07 is in none of the sources"
 
 
 # ---------------------------------------------------------------- figures the model wrote that are not in the sources
@@ -165,23 +209,25 @@ def test_the_overview_is_told_the_facts_the_summaries_and_what_was_taken_out():
 # ---------------------------------------------------------------- when a call fails
 def test_a_failed_overview_keeps_the_clause_summaries_and_says_so():
     client = SeqClient(GOOD, OVERVIEW, refuse_at=1)
-    result = summarise_contract(TS_TEXT, SECTIONS, "Contract price: THB 10,000,000", set(), [], client, "m")
+    result = summarise_contract(TS_TEXT, SECTIONS, "Contract price: THB 10,000,000", {}, [], client, "m")
     assert len(result.summarised()) == 2 and result.overview == "" and any("overview could not be written" in n for n in result.notes)
 
 
 def test_a_failed_first_call_raises():
     try:
-        summarise_contract(TS_TEXT, SECTIONS, "", set(), [], SeqClient(GOOD, OVERVIEW, refuse_at=0), "m")
+        summarise_contract(TS_TEXT, SECTIONS, "", {}, [], SeqClient(GOOD, OVERVIEW, refuse_at=0), "m")
     except AIStepError:
         return
     raise AssertionError("the first call's failure should be raised")
 
 
 # ---------------------------------------------------------------- what the model reads
-def test_the_prompts_say_what_boilerplate_is_and_that_a_changed_clause_is_never_skipped():
+def test_the_prompts_say_what_to_do_with_a_changed_clause_and_with_one_that_was_not_changed():
     flat = " ".join(CLAUSES_PROMPT.split())
-    for phrase in ("ordinary market boilerplate", "specific to this deal is not boilerplate, even if the rest of it is standard", "Never skip a clause that was CHANGED",
-                   "Every clause that is not listed as changed has the template's standard wording", "do not calculate, round or add any", "Do not write clause numbers",
+    for phrase in ("A clause that was CHANGED: never skip it", "say what changed, from what to what", "do not only restate the new wording",
+                   "skip it when it is only ordinary market boilerplate", "holds a value specific to this deal, one that comes from the TERM SHEET",
+                   "summarise ONLY what those values do in the clause, in one sentence", "do not describe the standard wording around them",
+                   "Every clause that is not changed has the template's standard wording", "do not calculate, round or add any", "Do not write clause numbers",
                    "Do not cite any statute"):
         assert phrase in flat, phrase
     flat = " ".join(OVERVIEW_PROMPT.split())
@@ -203,7 +249,7 @@ def test_the_model_reads_the_clauses_without_the_payment_table_and_every_call_is
     assert not any(cell in price.text for row in table["rows"] for cell in row if len(cell) > 25)
     answer = clauses_answer(*[decision(s.key, "skip", reason="Standard.") for s in sections])
     client = SeqClient(answer, OVERVIEW)
-    summarise_contract("ts", sections, "facts", set(), [], client, "m")
+    summarise_contract("ts", sections, "facts", {}, [], client, "m")
     assert [c["temperature"] for c in client.calls] == [0.0, 0.0]
     assert "[key: price_payment | title: Contract Price and Terms of Payment]" in client.calls[0]["messages"][1]["content"]
 

@@ -8,6 +8,7 @@ from decimal import Decimal, InvalidOperation
 
 from core.clause_params import limits_of, limits_text
 from core.governing_law import law_name
+from core.vat import vat_choice
 from core.signatures import names_of
 
 _DIGITS = re.compile(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?")
@@ -19,6 +20,16 @@ def _text(ts, name):
 
 def _join(*parts, sep=", "):
     return sep.join(p for p in parts if p)
+
+
+def amount(text):
+    """An amount written with thousands separators ("100000" -> "100,000", "1500.5" -> "1,500.50"); text that is not a plain amount is left as typed."""
+    raw = " ".join(str(text or "").split()).replace(",", "")
+    try:
+        value = Decimal(raw)
+    except InvalidOperation:
+        return " ".join(str(text or "").split())
+    return f"{value:,.2f}" if "." in raw and value != value.to_integral_value() else f"{int(value):,}"
 
 
 def fact_rows(ts):
@@ -37,7 +48,8 @@ def fact_rows(ts):
         rows.append(("Project", _join(project, f"capacity {capacity}" if capacity else "")))
     if t("contract_price_number"):
         words = f" ({t('contract_price_words')})" if t("contract_price_words") else ""
-        rows.append(("Contract price", _join(f"THB {t('contract_price_number')}{words}", t("vat_treatment"))))
+        vat = {"exclusive": "exclusive of VAT", "inclusive": "inclusive of VAT"}.get(vat_choice(ts), t("vat_treatment"))
+        rows.append(("Contract price", _join(f"THB {amount(t('contract_price_number'))}{words}", vat)))
     mode = t("deadline_mode")
     if mode == "period" and t("completion_days"):
         rows.append(("Time for the Works", f"{t('completion_days')} days"))

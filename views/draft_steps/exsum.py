@@ -33,27 +33,29 @@ def plain(text):
 
 
 def current():
-    """What the summary is made of, as the draft stands now: (term sheet, term sheet text, sections, table of facts, keys of the changed
-    clauses, titles of the clauses taken out, {changed clause key: its changed sentences}, {clause key: number in the draft})."""
+    """What the summary is made of, as the draft stands now: (term sheet, term sheet text, sections, table of facts, {changed clause key:
+    [{"before", "after", "user_words"}]}, titles of the clauses taken out, {changed clause key: its changed sentences}, {clause key: number})."""
     ts = clause_sandbox.current_term_sheet()
     library = clauses.draft_library_now()
     sections = sections_of(library)
     by_title = {c.key: c.title for c in library}
     key_of = {title: key for key, title in by_title.items()}
     items = risks.current_items()
-    sentences = {}
+    sentences, changes = {}, {}
     for it in items:
         key = key_of.get(it["clause"])
-        if key and it["kind"] in ("wording_change", "new_clause") and it["after"]:
-            sentences.setdefault(key, []).append(it["after"])
+        if key and it["kind"] in ("wording_change", "new_clause"):
+            changes.setdefault(key, []).append({"before": it["before"], "after": it["after"], "user_words": it["user_words"]})
+            if it["after"]:
+                sentences.setdefault(key, []).append(it["after"])
     taken_out = [it["clause"] for it in items if it["kind"] == "removed_clause"]
     numbers = {c.key: n for n, c, _ in renumber_and_render(library)}
-    return ts, term_sheet_for_review(ts), sections, fact_rows(ts), set(sentences), taken_out, sentences, numbers
+    return ts, term_sheet_for_review(ts), sections, fact_rows(ts), changes, taken_out, sentences, numbers
 
 
 def snapshot():
     ts, ts_text, sections, rows, changed, taken_out, sentences, _ = current()
-    data = [ts_text, facts_text(rows), [(s.key, s.text) for s in sections], sorted(changed), taken_out]
+    data = [ts_text, facts_text(rows), [(s.key, s.text) for s in sections], changed, taken_out]
     return hashlib.sha256(json.dumps(data, ensure_ascii=False).encode()).hexdigest()
 
 
