@@ -6,8 +6,10 @@ cannot be wrong. The AI writes only what the facts do not say, and every figure 
 import difflib
 import re
 from decimal import Decimal, InvalidOperation
+from functools import lru_cache
 
-from core.clause_params import limits_of, limits_text
+from core.clause_data import build_library
+from core.clause_params import MARKER, PARAMS, effective, format_number, limits_of, limits_text
 from core.governing_law import law_name
 from core.vat import vat_choice
 from core.wording import norm
@@ -34,8 +36,62 @@ def amount(text):
     return f"{value:,.2f}" if "." in raw and value != value.to_integral_value() else f"{int(value):,}"
 
 
-def fact_rows(ts):
-    """[(label, value)] for what the term sheet says about the deal, in the order a reader looks for it. A row with no value is left out."""
+CAP_NAMES = {"ld_cap": "Cap on delay damages", "damages_cap": "Cap on total damages deducted"}
+
+
+@lru_cache(maxsize=1)
+def _cap_places():
+    """{parameter key: (clause key, the words written just before its figure)}, read from the template: where each cap is written and how its
+    sentence leads into the figure."""
+    places = {}
+    for clause in build_library():
+        texts = list(clause.plain_paragraphs)
+        for item in clause.items:
+            texts += [item.text] + list(item.lettered)
+        for table in clause.tables:
+            texts += [cell for row in table["rows"] for cell in row]
+        for text in texts:
+            for m in MARKER.finditer(text):
+                places[m.group(1)] = (clause.key, re.split(r"\{pct", m.group(2))[0].strip(" ,"))
+    return places
+
+
+def _sentences_of(clause):
+    out = list(clause.plain_paragraphs)
+    for item in clause.items:
+        out += [item.text] + list(item.lettered)
+    return [norm(x) for x in out]
+
+
+def draft_caps(library, ts):
+    """[(label, what the draft says)] for each cap on damages, read from the clauses as they stand, not from the term sheet: a request to take a
+    cap out, or to change its figure, is a change to the sentence, and the term sheet does not know about it. Where the draft and the term sheet
+    differ the row says what the term sheet says."""
+    wanted = effective(limits_of(ts))
+    rows = []
+    for key in PARAMS:
+        label, (clause_key, anchor) = CAP_NAMES[key], _cap_places()[key]
+        clause = next((c for c in library if c.key == clause_key), None)
+        if clause is None or not clause.included:
+            rows.append((label, "not in the draft: the clause was taken out"))
+            continue
+        found = None
+        for sentence in _sentences_of(clause):
+            m = re.search(re.escape(anchor) + r"\s+(\d+(?:\.\d+)?)", sentence, re.IGNORECASE)
+            if m:
+                found = m.group(1)
+                break
+        said = f"{format_number(Decimal(found))}% of the Contract Price" if found else "none"
+        term_sheet = wanted[key]
+        if (found is None) != (term_sheet is None) or (found is not None and Decimal(found) != Decimal(str(term_sheet))):
+            said += f" (the term sheet says {'no cap' if term_sheet is None else format_number(term_sheet) + '%'}; the draft was changed)"
+        rows.append((label, said))
+    return rows
+
+
+def fact_rows(ts, library=None):
+    """[(label, value)] for what the term sheet says about the deal, in the order a reader looks for it. A row with no value is left out. The
+    caps on damages are read from the draft when `library` (the clauses as they stand) is given."""
     t = lambda name: _text(ts, name)
     rows = []
     owner = _join(t("owner_name"), t("owner_country")) if t("owner_name") else ""              # a country alone says nothing
@@ -62,7 +118,10 @@ def fact_rows(ts):
         share = ", ".join(f"{str(i.percent).strip()}%" for i in installments)
         rows.append(("Payment", _join(f"{len(installments)} installments ({share})" if installments else "",
                                       f"each due within {t('payment_days')} working days" if t("payment_days") else "")))
-    rows.append(("Caps on damages", limits_text(limits_of(ts))))
+    if library is None:
+        rows.append(("Caps on damages", limits_text(limits_of(ts))))
+    else:
+        rows += draft_caps(library, ts)                                  # what the draft says, which a change to its wording may have moved
     if law_name(getattr(ts, "governing_law", "")):
         rows.append(("Governing law", law_name(ts.governing_law)))
     signatories = _join(f"Owner: {', '.join(names_of(t('owner_signatory')))}" if names_of(t("owner_signatory")) else "",

@@ -2,7 +2,7 @@
 changed from the template.
 
 Code writes everything that must be right, and shows it with no API key: the table of facts from the term sheet (parties, project, price, time,
-payment, caps, governing law, signatories), what the term sheet still lacks, and "Changes made to the contract": the clauses taken out of the
+payment, caps as the draft has them, governing law, signatories), what the term sheet still lacks, and "Changes made to the contract": the clauses taken out of the
 standard contract and, for every sentence that was changed, the exact words that changed ("0.05 (zero point zero five)" to "0.5 (zero point
 five)") with the sentence before and after. The AI (one call, step "exsum_overview") writes only the overview above the changes: what the deal is,
 what matters in it and how it differs from the standard contract, leaving ordinary standard wording alone. It runs once by itself when the preview
@@ -49,7 +49,7 @@ def current():
             changes.setdefault(key, []).append({"kind": it["kind"], "before": it["before"], "after": it["after"], "user_words": it["user_words"]})
     taken_out = [it["clause"] for it in items if it["kind"] == "removed_clause"]
     numbers = {c.key: n for n, c, _ in renumber_and_render(library)}
-    return term_sheet_for_review(ts), sections, fact_rows(ts), changes, taken_out, numbers, titles
+    return term_sheet_for_review(ts), sections, fact_rows(ts, library), changes, taken_out, numbers, titles
 
 
 def snapshot():

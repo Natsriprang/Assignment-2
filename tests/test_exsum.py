@@ -10,7 +10,7 @@ from ai.exsum import MAX_OVERVIEW_SENTENCES, OVERVIEW_PROMPT, build_schema, chan
 from ai.llm import AIStepError
 from ai.review import Section, sections_of
 from core.draft_state import library_for
-from core.exsum import allowed_figures, amount, change_line, digit_figures, fact_rows, facts_text, unsupported_figures, word_changes
+from core.exsum import allowed_figures, amount, change_line, digit_figures, draft_caps, fact_rows, facts_text, unsupported_figures, word_changes
 from core.readiness import missing_before_sending
 from core.term_sheet_fields import TermSheet
 from tests.test_interpret import sample_term_sheet
@@ -68,6 +68,51 @@ def test_amounts_are_written_with_separators_and_vat_in_full_words():
         ts = TermSheet(contract_price_number="100000", contract_price_words="One-hundred Thousand", vat_treatment=vat)
         assert dict(fact_rows(ts))["Contract price"] == f"THB 100,000 (One-hundred Thousand), {shown}", vat
     assert dict(fact_rows(TermSheet(contract_price_number="100000")))["Contract price"] == "THB 100,000"
+
+
+# ---------------------------------------------------------------- the caps are what the draft says
+def ld_edit(new_from_old, ts=None):
+    """An accepted change to the sentence of the Completion Deadline that holds the cap on delay damages."""
+    ts = ts or TS
+    clause = next(c for c in library_for({}, getattr(ts, "limits", None) or None, None, ts) if c.key == "completion_deadline")    # the sentence as the limits write it
+    old = next(i.text for i in clause.items if "liquidated damages" in i.text)
+    return {"id": "e1", "clause_key": "completion_deadline", "change_type": "modify", "old": old, "new": new_from_old(old), "summary": "s"}
+
+
+def test_the_caps_are_read_from_the_clauses_and_agree_with_the_term_sheet_when_nothing_was_changed():
+    assert draft_caps(library_for({}, None, None, TS), TS) == [("Cap on delay damages", "5% of the Contract Price"),
+                                                               ("Cap on total damages deducted", "5% of the Contract Price")]
+    ts = sample_term_sheet()
+    ts.limits = {"ld_cap": 3.0, "damages_cap": None}
+    rows = draft_caps(library_for({}, ts.limits, None, ts), ts)
+    assert rows == [("Cap on delay damages", "3% of the Contract Price"), ("Cap on total damages deducted", "none")], "a cap that is off is none, and says nothing more"
+
+
+def test_a_cap_that_a_request_took_out_or_changed_is_shown_as_the_draft_has_it_and_says_what_the_term_sheet_says():
+    gone = library_for({}, None, None, TS, [ld_edit(lambda old: old.replace(" but not more than 5 (five) percent of the Contract Price", ""))])
+    assert draft_caps(gone, TS)[0] == ("Cap on delay damages", "none (the term sheet says 5%; the draft was changed)")
+    seven = library_for({}, None, None, TS, [ld_edit(lambda old: old.replace("not more than 5 (five) percent", "not more than 7 (seven) percent"))])
+    assert draft_caps(seven, TS)[0] == ("Cap on delay damages", "7% of the Contract Price (the term sheet says 5%; the draft was changed)")
+    assert draft_caps(gone, TS)[1] == ("Cap on total damages deducted", "5% of the Contract Price"), "the other cap was not touched"
+    ts = sample_term_sheet()
+    ts.limits = {"ld_cap": None, "damages_cap": 5.0}
+    added = library_for({}, ts.limits, None, ts, [ld_edit(lambda old: old.rstrip(".") + " but not more than 10 (ten) percent of the Contract Price.", ts)])
+    assert draft_caps(added, ts)[0] == ("Cap on delay damages", "10% of the Contract Price (the term sheet says no cap; the draft was changed)")
+
+
+def test_a_cap_in_a_clause_that_was_taken_out_is_not_in_the_draft():
+    rows = draft_caps(library_for({"termination": False}, None, None, TS), TS)
+    assert rows[1] == ("Cap on total damages deducted", "not in the draft: the clause was taken out") and rows[0][1] == "5% of the Contract Price"
+
+
+def test_the_table_takes_the_caps_from_the_draft_when_it_has_the_clauses_and_from_the_term_sheet_when_it_does_not():
+    assert dict(fact_rows(TS))["Caps on damages"] == "cap on delay damages 5%; cap on total damages deducted 5%"
+    gone = library_for({}, None, None, TS, [ld_edit(lambda old: old.replace(" but not more than 5 (five) percent of the Contract Price", ""))])
+    rows = fact_rows(TS, gone)
+    labels = [label for label, _ in rows]
+    assert "Caps on damages" not in labels and labels.index("Cap on delay damages") == labels.index("Payment") + 1
+    assert dict(rows)["Cap on delay damages"] == "none (the term sheet says 5%; the draft was changed)"
+    assert "Cap on delay damages: none (the term sheet says 5%; the draft was changed)" in facts_text(rows)
 
 
 # ---------------------------------------------------------------- the exact words that changed, by code
