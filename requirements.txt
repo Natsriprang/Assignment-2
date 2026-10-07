@@ -1,5 +1,5 @@
-streamlit
-openai
-python-dotenv
-python-docx
-openpyxl
+openai==3.24.0
+openpyxl==3.1.5
+python-docx==1.2.0
+python-dotenv==1.2.4
+streamlit==1.65.0
