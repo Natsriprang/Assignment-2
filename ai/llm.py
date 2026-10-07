@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")
+TEMPERATURE = os.getenv("OPENAI_TEMPERATURE", "0")      # 0 keeps the answers steady between runs; set it to an empty value to leave it to the model
 
 
 def get_client(api_key=None):
@@ -17,6 +18,24 @@ def get_client(api_key=None):
         return None
     from openai import OpenAI  # imported lazily so offline tests don't need the package
     return OpenAI(api_key=key)
+
+
+def chat_create(client, **kwargs):
+    """client.chat.completions.create with the temperature set (0 unless OPENAI_TEMPERATURE says otherwise), so the same input gives
+    nearly the same answer every time. A model that does not accept a temperature is called again without one."""
+    try:
+        wanted = float(TEMPERATURE) if TEMPERATURE.strip() else None
+    except ValueError:
+        wanted = None
+    if wanted is not None and "temperature" not in kwargs:
+        kwargs["temperature"] = wanted
+    try:
+        return client.chat.completions.create(**kwargs)
+    except Exception as e:
+        if "temperature" in kwargs and "temperature" in str(e).lower():
+            kwargs.pop("temperature")
+            return client.chat.completions.create(**kwargs)
+        raise
 
 
 class CountingClient:
@@ -49,7 +68,8 @@ def structured_call(client, model, system, user, name, schema):
     """One chat completion that must return JSON matching `schema`. Returns the parsed dict."""
     import json
 
-    response = client.chat.completions.create(
+    response = chat_create(
+        client,
         model=model,
         messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
         response_format={"type": "json_schema", "json_schema": {"name": name, "strict": True, "schema": schema}},

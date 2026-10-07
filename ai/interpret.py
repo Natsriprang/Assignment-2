@@ -9,7 +9,7 @@ import json
 import re
 from dataclasses import dataclass, field
 
-from ai.llm import MODEL
+from ai.llm import MODEL, chat_create
 from core import wording
 from core.clause_params import limits_of, limits_text
 import re
@@ -809,7 +809,8 @@ def interpret_request(ts, library, client, model=MODEL, conversation=None, pendi
         f"<term_sheet>\n{term_sheet_text(ts, for_model=True)}\n</term_sheet>\n\n"
         f"<conversation>\n{transcript}\n</conversation>"
     )
-    response = client.chat.completions.create(
+    response = chat_create(
+        client,
         model=model,
         messages=[{"role": "system", "content": SYSTEM_PROMPT},
                   {"role": "user", "content": user_message}],

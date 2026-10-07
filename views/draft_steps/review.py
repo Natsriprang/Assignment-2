@@ -1,10 +1,16 @@
-"""The review round of the draft (step 3). The AI reads the whole draft against the term sheet in two calls (a review, then a second look
-at its own findings) and reports what is missing, does not agree with the term sheet, contradicts itself or is too vague. A finding
-may come with a proposed fix: one sentence rewritten, or one sentence added at the end of a clause. Each fix has Apply, Edit and Reject
-like the requests in the Clauses step, and only Apply writes anything into the draft.
+"""The review round of the draft (step 3). Two kinds of check, side by side:
 
-It runs once by itself when the preview is first opened with an API key, and after that only when asked (Review again), so it never spends
-a call without the user knowing. The result is shown as it was when it was made. Nothing here blocks the download."""
+- The app checks by itself, without AI, which clauses still refer to a clause that was taken out (core.dependencies). This is always
+  shown, with no API key and no button.
+- The AI reads the term sheet and the sentences this draft changed or added compared with the template, with the whole draft for
+  reading, in two calls (a check, then a second look that only confirms or declines). It reports a sentence that says something different
+  from the term sheet, or two sentences that say different things about the same matter, each with its evidence quoted. A difference from
+  the term sheet may come with a proposed fix: one sentence rewritten, or one added. Each fix has Apply, Edit and Reject like the requests
+  in the Clauses step, and only Apply writes anything into the draft.
+
+The AI part runs once by itself when the preview is first opened with an API key, and after that only when asked (Review again, which is
+off while neither the term sheet nor the draft has changed since the last review), so it never spends a call without the user knowing.
+The result is shown as it was when it was made. Nothing here blocks the download."""
 import hashlib
 import json
 from types import SimpleNamespace
@@ -13,13 +19,13 @@ import streamlit as st
 
 from ai.interpret import term_sheet_text
 from ai.llm import MODEL, AIStepError, CountingClient, get_client
-from ai.review import review_draft, sections_of
+from ai.review import dependency_findings, review_draft, sections_of
 from core import wording
 from core.draft_state import library_for
 from core.header import build_header
 from core.signatures import build_signature_block, signature_texts
 from views import clause_sandbox
-from views.draft_steps import clauses, drafts, flow, wording_state
+from views.draft_steps import clauses, drafts, flow, risks, wording_state
 
 RESULT_KEY = "draft_review"                # {"snapshot", "run", "findings", "dropped", "notes", "second_look_done"} or {"snapshot", "error"}
 AUTO_KEY = "draft_review_auto"             # the draft the review was last started on by itself
@@ -41,32 +47,39 @@ def current_library():
                        wording_state.applied())
 
 
+def current_changes():
+    """What this draft changed or added compared with the template, as the sentences themselves (a clause taken out has none)."""
+    return [{"id": it["id"], "kind": it["kind"], "clause": it["clause"], "text": it["after"]} for it in risks.current_items()
+            if it["kind"] in ("wording_change", "new_clause") and it["after"]]
+
+
 def current_input():
-    """(term sheet text, sections of the draft as it stands now)."""
+    """(term sheet text, sections of the draft as it stands now, the changed sentences)."""
     ts = clause_sandbox.current_term_sheet()
     block = build_signature_block(ts)
-    return term_sheet_text(ts, for_model=True), sections_of(current_library(), build_header(ts), signature_texts(block)[1:])
+    return term_sheet_text(ts, for_model=True), sections_of(current_library(), build_header(ts), signature_texts(block)[1:]), current_changes()
 
 
 def snapshot():
-    ts_text, sections = current_input()
-    return hashlib.sha256(json.dumps([ts_text, [(s.key, s.text) for s in sections]], ensure_ascii=False).encode()).hexdigest()
+    ts_text, sections, changes = current_input()
+    return hashlib.sha256(json.dumps([ts_text, [(s.key, s.text) for s in sections], [c["text"] for c in changes]], ensure_ascii=False).encode()).hexdigest()
 
 
 # ---------------------------------------------------------------------------- running it
 def run_review(client):
-    """Two AI calls now (the review and the second look); the result is stored with the draft it was made on."""
-    ts_text, sections = current_input()
+    """Two AI calls now (the check and the second look); the result is stored with the draft it was made on."""
+    ts_text, sections, changes = current_input()
     run = st.session_state.get(RUN_KEY, 0) + 1
     st.session_state[RUN_KEY] = run
     st.session_state[STATUS_KEY] = {}
     st.session_state[NOTE_KEY] = {}
-    result = {"snapshot": snapshot(), "run": run}
+    snap = snapshot()
+    result = {"snapshot": snap, "input_snapshot": snap, "run": run}
     calls = st.session_state.setdefault(flow.CALLS_KEY, [])
-    with st.spinner("Reviewing the draft against the term sheet..."):
+    with st.spinner("Reviewing the changes against the term sheet..."):
         try:
             found = review_draft(ts_text, sections, CountingClient(client, calls, FIRST_STEP), MODEL,
-                                 second_client=CountingClient(client, calls, SECOND_STEP))
+                                 second_client=CountingClient(client, calls, SECOND_STEP), changes=changes)
             result.update(findings=found.findings, dropped=found.dropped, notes=found.notes, second_look_done=found.second_look_done)
         except AIStepError as e:
             result["error"] = str(e)
@@ -177,14 +190,17 @@ def show_finding(run, f):
     key = fkey(run, f)
     status = st.session_state.get(STATUS_KEY, {}).get(key)
     with st.container(border=True):
-        st.markdown(f"**{plain(f.clause)}**" + (" \u00b7 found by the second look" if f.round == 2 else ""))
+        tag = "Checked by the app, no AI" if f.source == "app" else ("Confirmed by the second look" if f.confirmed else "Not confirmed by a second look")
+        st.markdown(f"**{plain(f.clause)}**  \u00b7  {tag}")
         st.write(plain(f.issue))
         if f.why:
             st.caption(f"Why: {plain(f.why)}")
         if f.term_sheet_says:
             st.caption(f"The term sheet says: \u201c{plain(f.term_sheet_says)}\u201d")
-        if f.quote_verified:
-            st.caption(f"In the draft: \u201c{plain(f.quote)}\u201d")
+        if f.quote:
+            st.caption(f"In the draft ({plain(f.clause)}): \u201c{plain(f.quote)}\u201d" if f.source == "ai" else f"The sentence: \u201c{plain(f.quote)}\u201d")
+        if f.other_quote:
+            st.caption(f"Also in the draft ({plain(f.other_clause)}): \u201c{plain(f.other_quote)}\u201d")
         if f.fix_type == "none":
             st.caption(plain(f.fix_note) if f.fix_note else "No automatic fix. Change the draft in the Clauses step, or in the Word file after downloading.")
             return
@@ -220,6 +236,13 @@ def show_finding(run, f):
 def show():
     """The review section of the preview."""
     st.subheader("Review of the draft")
+    st.caption("Checks that the changes made to the template agree with the term sheet and with the rest of the draft. "
+               "Risks to a party are in the section above.")
+    app_findings = dependency_findings(current_library())
+    if app_findings:
+        st.warning(f"{len(app_findings)} clause(s) still refer to a clause that was taken out. Nothing was changed.")
+        for f in app_findings:
+            show_finding(0, f)
     client = get_client(st.session_state.get("openai_api_key"))
     result = st.session_state.get(RESULT_KEY)
     snap = None
@@ -230,8 +253,8 @@ def show():
             run_review(client)
             result = st.session_state.get(RESULT_KEY)
     if result is None:
-        st.caption("The draft was not reviewed against the term sheet yet. Enter an API key to review it." if client is None
-                   else "The draft was not reviewed against the term sheet yet.")
+        st.caption("The changes were not checked against the term sheet yet. Enter an API key to check them." if client is None
+                   else "The changes were not checked against the term sheet yet.")
     else:
         if client is not None and result["snapshot"] != snap:
             st.caption("The draft or the term sheet changed since the review was made. This is what that review found; press Review again to review it again.")
@@ -247,11 +270,16 @@ def show():
                 for f in result["findings"]:
                     show_finding(run, f)
             else:
-                st.caption("The review found nothing in the draft that disagrees with the term sheet.")
+                st.caption("No difference from the term sheet and no contradiction was found in the changes.")
             if result["dropped"]:
-                with st.expander(f"{len(result['dropped'])} finding(s) dropped by the second look"):
+                with st.expander(f"{len(result['dropped'])} finding(s) the second look did not confirm"):
                     for _, issue, reason in result["dropped"]:
                         st.caption(f"{plain(issue)} \u2014 {plain(reason)}")
-    if client is not None and st.button("Review again" if result is not None else "Review the draft", key="review_again"):
-        run_review(client)
-        st.rerun()
+    if client is not None:
+        unchanged = result is not None and "error" not in result and result.get("input_snapshot") == snap
+        pressed = st.button("Review again" if result is not None else "Review the draft", key="review_again", disabled=unchanged)
+        if unchanged:
+            st.caption("The term sheet and the draft have not changed since the last review.")
+        if pressed:
+            run_review(client)
+            st.rerun()
