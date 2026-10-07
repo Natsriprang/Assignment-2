@@ -28,6 +28,7 @@ FIELD_TITLES = {
     "roof_owner": "Roof owner",
     "contract_no": "Contract no.",
     "contract_date": "Contract date",
+    "governing_law": "Governing law",
     "signing_place_choice": "Place of signing",
     "signing_place_other": "Other place",
     **_party("owner", "Owner"),

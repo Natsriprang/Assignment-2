@@ -336,7 +336,7 @@ def test_model_admitting_a_different_term_becomes_a_question():
 
 def test_term_check_uses_stems_and_skips_generic_words():
     lib = build_library()
-    gov = "This Agreement shall be governed by and interpreted in accordance with the laws of Thailand"
+    gov = next(i.text for c in lib if c.key == "miscellaneous" for i in c.items if "governed by" in i.text).rstrip(".")
     kept = validate(empty(deviations=[dev("miscellaneous", gov, term="governing law")]), lib, "x")
     assert len(kept.deviations) == 1
     generic = validate(empty(deviations=[dev("completion_deadline", LD_QUOTE, term="the rate")]), lib, "x")

@@ -17,7 +17,7 @@ from core.term_sheet_fields import Installment, TermSheet, ensure_fields, signin
 
 
 def full(**over):
-    ts = TermSheet(owner_witnesses="Ploy Wong", contractor_witnesses="Mali Chan", project_name="Rooftop PV", project_location="Bangkok", capacity="500", contract_no="C-1", contract_date="1 Nov 2026",
+    ts = TermSheet(governing_law="Thailand", owner_witnesses="Ploy Wong", contractor_witnesses="Mali Chan", project_name="Rooftop PV", project_location="Bangkok", capacity="500", contract_no="C-1", contract_date="1 Nov 2026",
                    owner_name="Solar Owner Co., Ltd.", owner_country="Singapore", owner_reg_no="O-1", owner_address="1 Owner Road, Bangkok",
                    contractor_name="Sun Build Co., Ltd.", contractor_reg_no="C-2", contractor_address="2 Builder Road, Bangkok",
                    contract_price_number="10000000", contract_price_words="ten million baht", vat_treatment="exclusive",
@@ -61,6 +61,34 @@ def test_capacity_and_location_in_clause_one():
     assert "installed capacity of 0.5 MW (\u201cWorks\u201d)" in text(capacity="0.5", capacity_unit="MW")
     assert "installed capacity of [*] MW (\u201cWorks\u201d) at Bangkok" in text(capacity="", capacity_unit="MW")          # the unit still follows
     assert "(\u201cWorks\u201d) at [*] in accordance" in text(project_location="")
+
+
+def test_the_governing_law_is_written_into_the_miscellaneous_sentence():
+    sentence = lambda **o: next(i.text for i in clause(library_for({}, None, None, full(**o)), "miscellaneous").items if "governed by" in i.text)
+    assert sentence() == "This Agreement shall be governed by and interpreted in accordance with the laws of Thailand."
+    assert sentence(governing_law="the laws of Victoria, Australia.") == "This Agreement shall be governed by and interpreted in accordance with the laws of Victoria, Australia."
+    assert sentence(governing_law="Laws of  England  and Wales") .endswith("the laws of England and Wales.")
+    assert sentence(governing_law="").endswith("the laws of [*].") and sentence(governing_law="   ").endswith("the laws of [*].")
+    assert "[*]" not in sentence()
+    only = library_for({}, None, None, full())
+    assert [c.key for c in only if c.key != "miscellaneous" and any("laws of" in i.text and "governed" in i.text for i in c.items)] == []
+
+
+def test_the_name_of_the_law_is_cut_down_to_the_place():
+    from core.governing_law import law_name
+    assert law_name("Thailand") == "Thailand" and law_name("  the laws of Thailand. ") == "Thailand"
+    assert law_name("Laws of the Kingdom of Thailand") == "the Kingdom of Thailand", "the 'the' that belongs to the name stays"
+    assert law_name("Thai law") == "Thai law", "only a leading 'laws of' is taken off: nothing is guessed about other wordings"
+    assert law_name("") == "" and law_name(None) == "" and law_name("law of") == "law of"
+
+
+def test_the_governing_law_is_required_and_listed_with_its_page_name():
+    from core.field_titles import FIELD_TITLES
+    from core.term_sheet_fields import REQUIRED_FIELDS, missing_required
+    assert "governing_law" in REQUIRED_FIELDS and FIELD_TITLES["governing_law"] == "Governing law"
+    ts = full(governing_law="")
+    assert "governing_law" in missing_required(ts) and "governing_law" not in missing_required(full())
+    assert ensure_fields(SimpleNamespace(project_name="P")).governing_law == ""
 
 
 def test_the_term_sheet_has_no_attachment_number_any_more():
@@ -216,7 +244,7 @@ def test_a_sentence_with_a_different_number_of_blanks_is_left_alone():
 def test_only_the_intended_clauses_change():
     before = {c.key: ([*c.plain_paragraphs], [i.text for i in c.items]) for c in library_for({})}
     after = {c.key: ([*c.plain_paragraphs], [i.text for i in c.items]) for c in library_for({}, None, None, full())}
-    assert sorted(k for k in before if before[k] != after[k]) == ["completion_deadline", "construction_terms", "price_payment"]
+    assert sorted(k for k in before if before[k] != after[k]) == ["completion_deadline", "construction_terms", "miscellaneous", "price_payment"]
     tables = lambda lib: {c.key: [r[:] for t in c.tables for r in t["rows"]] for c in lib}
     assert sorted(k for k, v in tables(library_for({}, None, None, full())).items() if v != tables(library_for({})).get(k)) == ["notice", "price_payment"]
 

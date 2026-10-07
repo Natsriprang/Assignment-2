@@ -18,6 +18,7 @@ class TermSheet:
     capacity_unit: str = "kWp"      # "kWp" or "MW"
     contract_no: str = ""
     contract_date: str = ""
+    governing_law: str = ""            # the place whose law governs the Agreement, as the user writes it
     signing_place_choice: str = ""     # "owner" | "contractor" | "other" | "" -- the place is read from the address chosen
     signing_place_other: str = ""
 
@@ -28,7 +29,7 @@ class TermSheet:
     owner_address: str = ""
 
     contractor_name: str = ""
-    contractor_country: str = ""
+    contractor_country: str = "Thailand"
     contractor_reg_no: str = ""
     contractor_signatory: str = ""
     contractor_address: str = ""
@@ -68,10 +69,10 @@ class TermSheet:
 
 REQUIRED_FIELDS = [
     "project_name", "project_location", "capacity", "owner_name", "contractor_name",
-    "contract_price_number",
+    "contract_price_number", "governing_law",
 ]
 
-NEW_FIELD_DEFAULTS = {"owner_country": "", "contractor_country": "Thailand", "signing_place_choice": "",
+NEW_FIELD_DEFAULTS = {"governing_law": "", "owner_country": "", "contractor_country": "Thailand", "signing_place_choice": "",
                       "signing_place_other": "", "payment_days": "30", "owner_witnesses": "", "contractor_witnesses": "",
                       "deadline_mode": "", "completion_days": "", "owner_contact_email": "", "contractor_contact_email": "",
                       "additional_conditions": dict}

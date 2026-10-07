@@ -26,6 +26,7 @@ FIELD_LABELS = {
     "capacity": "Capacity (kWp or MW)",
     "contract_no": "Contract no.",
     "contract_date": "Contract date",
+    "governing_law": "Governing law",
     "owner_name": "Owner",
     "owner_reg_no": "Owner registration no.",
     "owner_signatory": "Owner authorised signatory(ies)",

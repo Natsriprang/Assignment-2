@@ -122,6 +122,13 @@ def test_the_template_in_the_repository_has_every_label_once_and_reads_cleanly()
     assert rep.missing == [] and rep.conflicts == [] and len(ts.installments) >= 1
 
 
+def test_the_template_has_a_governing_law_row_that_is_read_into_the_field():
+    from core.xlsx_parser import FIELD_LABELS, parse_xlsx_report
+    assert FIELD_LABELS["governing_law"] == "Governing law"
+    ts, report = parse_xlsx_report(open("data/term_sheet_template_EN.xlsx", "rb"))
+    assert ts.governing_law == "Thailand" and "Governing law" not in report.missing
+
+
 if __name__ == "__main__":
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
     for name, fn in tests:

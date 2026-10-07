@@ -9,6 +9,7 @@ from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from core.capacity import capacity_parts, format_number
 from core.clause_params import int_words
+from core.governing_law import law_name
 from core.vat import CLAUSE_PHRASE, vat_choice
 
 BLANK = "[*]"
@@ -156,6 +157,13 @@ def fill_template(library, term_sheet):
         number, unit = capacity_parts(ts)
         text = construction.plain_paragraphs[0].replace(f"{BLANK} kWp", f"{BLANK} {unit}")
         construction.plain_paragraphs[0] = fill_slots(text, [number, _text(ts, "project_location") or None])
+
+    # the governing law sentence: "... in accordance with the laws of [*]." (a clause that still names a country has no blank to fill)
+    law = law_name(_text(ts, "governing_law"))
+    misc = by_key.get("miscellaneous")
+    if law and misc:
+        for item in misc.items:
+            item.text = item.text.replace(f"laws of {BLANK}", f"laws of {law}", 1)
 
     price = parse_decimal(_text(ts, "contract_price_number"))
     price_item = _item(price_clause, 0)

@@ -12,7 +12,7 @@ from core.term_sheet_fields import TermSheet, missing_required
 from core.xlsx_parser import parse_xlsx
 from tests.xlsx_helper import workbook
 
-BASE = dict(project_name="P", project_location="L", capacity="500", owner_name="O", contractor_name="C", contract_price_number="1000")
+BASE = dict(project_name="P", project_location="L", capacity="500", owner_name="O", contractor_name="C", contract_price_number="1000", governing_law="Thailand")
 
 
 def test_which_wordings_are_read_as_days_after_signing():

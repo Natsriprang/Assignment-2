@@ -130,6 +130,10 @@ def render():
     ts.contract_no = c1.text_input("Contract no.", ts.contract_no)
     ts.contract_date = c2.text_input("Contract date", ts.contract_date)
     c1, c2 = st.columns(2)
+    ts.governing_law = c1.text_input("Governing law", ts.governing_law,
+                                     help="The country or state whose law governs the Agreement, for example Thailand. "
+                                          "The contract says \u201cthe laws of \u2026\u201d, so write the name only.")
+    c1, c2 = st.columns(2)
     place_choice = ts.signing_place_choice if ts.signing_place_choice in PLACE_LABELS else ""
     ts.signing_place_choice = c1.selectbox("Place of signing", list(PLACE_LABELS), index=list(PLACE_LABELS).index(place_choice),
                                            format_func=PLACE_LABELS.get, key=f"place_choice_{v}")

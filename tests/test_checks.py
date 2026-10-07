@@ -13,7 +13,7 @@ from core.term_sheet_fields import Installment, TermSheet
 
 
 def complete(**over):
-    ts = TermSheet(project_name="Rooftop PV", project_location="Rayong", capacity="500", contract_no="C-011126", contract_date="1 Nov 2026",
+    ts = TermSheet(governing_law="Thailand", project_name="Rooftop PV", project_location="Rayong", capacity="500", contract_no="C-011126", contract_date="1 Nov 2026",
                    signing_place_choice="owner", owner_name="Owner Co.", owner_country="Singapore", owner_reg_no="1020304050601",
                    owner_signatory="Nat Sriprang", owner_address="1 Owner Road", contractor_name="Sun Build", contractor_reg_no="3533555555555",
                    contractor_signatory="Noom Sriprang", contractor_address="2 Builder Road", contract_price_number="100000",
@@ -132,7 +132,7 @@ def test_fields_with_their_own_notice_or_a_default_or_no_use_are_not_listed():
 def test_the_required_blanks_and_the_others_are_one_list_without_repeats():
     required, other = blank_groups(TermSheet())
     assert required == ["Project name", "Project location", "Capacity", "Owner \u2013 Company name", "Contractor \u2013 Company name",
-                        "Contract price \u2013 Price (THB, number)", "The Works start and finish by"]
+                        "Contract price \u2013 Price (THB, number)", "Governing law", "The Works start and finish by"]
     assert not set(required) & set(other), "a field is named once"
     assert "Contract no." in other and "Owner \u2013 Authorised signatory" in other and "Payment installments" in other
     assert sorted(required + other) == sorted(set(required + other))
