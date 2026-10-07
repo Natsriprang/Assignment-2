@@ -27,7 +27,10 @@ from decimal import Decimal, InvalidOperation
 
 from ai.llm import MODEL, AIStepError, structured_call
 from core import wording
+from core.clause_params import limits_of, limits_text
+from core.conditions import condition_lines
 from core.dependencies import broken_references
+from core.field_titles import title
 from core.price_words import words_to_number
 from core.wording import norm
 
@@ -76,6 +79,10 @@ must differ in substance. If the draft already says what the term sheet says, th
 other_clause_key. They must be two different sentences.
 When there are changed sentences, the quote must be inside one of them. Leave term_sheet_says, other_clause_key and other_quote as \
 empty strings when they do not apply.
+
+A changed sentence may come with the words of the user who asked for the change. Such a change is meant to differ from the template, \
+and it may differ from the term sheet: do not report that difference. Report the sentence only if it contradicts another part of the \
+draft, or says more than the user asked for.
 
 Do not report: a placeholder written as [*]; a field the system writes into the draft by itself as code (the parties, the price, VAT, \
 the payment table, the dates, the governing law, the signatories); a problem inside the term sheet itself; something that is merely \
@@ -163,6 +170,21 @@ def draft_digest(sections):
     return "\n\n".join(f"[key: {s.key} | title: {s.title}]\n{s.text}" for s in sections)
 
 
+def term_sheet_for_review(ts):
+    """The term sheet as the review reads it: every value under the name it has on the page, which says its unit ("Payment due within (working
+    days): 30", not "payment_days: 30"). The installment rows are left out: the system writes them into the payment table."""
+    lines = []
+    for name in ts.__dataclass_fields__:
+        if name in ("installments", "limits", "additional_conditions"):
+            continue
+        value = getattr(ts, name)
+        if value:
+            lines.append(f"{title(name)}: {value}")
+    lines.append(f"Limits: {limits_text(limits_of(ts))}")
+    lines += condition_lines(ts)
+    return "\n".join(lines)
+
+
 KIND_PHRASE = {"wording_change": "a sentence changed or added", "new_clause": "a new clause"}
 
 
@@ -170,7 +192,13 @@ def changes_text(changes):
     """`changes` are [{"id", "kind", "clause", "text"}]: what this draft changed or added compared with the template."""
     if not changes:
         return "(none: the draft is the standard template)"
-    return "\n\n".join(f"[{c['id']} | {KIND_PHRASE.get(c['kind'], c['kind'])} | clause: {c['clause']}]\n{c['text']}" for c in changes)
+    blocks = []
+    for c in changes:
+        block = f"[{c['id']} | {KIND_PHRASE.get(c['kind'], c['kind'])} | clause: {c['clause']}]\n{c['text']}"
+        if norm(c.get("user_words", "")):
+            block += f"\nThe user asked for this change: \u201c{norm(c['user_words'])}\u201d"
+        blocks.append(block)
+    return "\n\n".join(blocks)
 
 
 def read_input(ts_text, sections, changes=()):
@@ -259,6 +287,12 @@ def _has(haystack, words):
     return bool(words) and words.lower().strip(" .") in haystack
 
 
+def _already_in(section_lower, claim):
+    """The claim, or only its value when it is written "name: value", is already in the section (a value too short to judge is not)."""
+    parts = [claim] + ([claim.split(":", 1)[1]] if ":" in claim else [])
+    return any(len(p.strip(" .")) >= MIN_CLAIM and _has(section_lower, p) for p in parts)
+
+
 def validate_findings(raw_findings, sections, changes, ts_text, prefix, notes, route=""):
     """The model's findings as Finding objects, each with its evidence checked: the quote is in the section named, and inside a changed
     sentence when there are any; a term_sheet_mismatch has words that are in the term sheet and are not already in the section; a
@@ -288,7 +322,7 @@ def validate_findings(raw_findings, sections, changes, ts_text, prefix, notes, r
             if not _has(ts_lower, claim):
                 notes.append(f"Left out a finding whose words were not found in the term sheet: {issue}")
                 continue
-            if len(claim) >= MIN_CLAIM and _has(section_lower, claim):
+            if _already_in(section_lower, claim):
                 notes.append(f"Left out a finding that the draft already agrees with the term sheet on: {issue}")
                 continue
             fix_type, old, new, note = check_fix(section, quote, raw.get("fix_type"), raw.get("new_text", ""), ts_text)

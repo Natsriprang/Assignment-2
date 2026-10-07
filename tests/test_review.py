@@ -9,8 +9,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import ai.llm as llm
 from ai.llm import AIStepError, chat_create
-from ai.review import (CHANGES_PROMPT, MAX_FINDINGS, READ_FROM_CHANGES, READ_FROM_TERM_SHEET, TERM_SHEET_PROMPT, Section, build_schema,
-                       dependency_findings, review_draft, sections_of)
+from ai.review import (CHANGES_PROMPT, MAX_FINDINGS, READ_FROM_CHANGES, READ_FROM_TERM_SHEET, TERM_SHEET_PROMPT, Section, build_schema, changes_text,
+                       dependency_findings, review_draft, sections_of, term_sheet_for_review)
 from core.clauses import Clause, Item
 from core.draft_state import library_for
 
@@ -302,6 +302,42 @@ def test_a_part_that_is_not_a_clause_has_findings_but_no_fix():
 def test_a_draft_that_is_only_text_has_no_fixes():
     f = one(first(finding(clause_key="draft")), [Section("draft", "The draft", LD_OLD)], TS_TEXT, ()).findings[0]
     assert f.fix_type == "none"
+
+
+
+
+# ---------------------------------------------------------------- what the model is told about the term sheet and about the user's own changes
+def test_the_term_sheet_is_read_under_the_names_of_the_page_with_their_units():
+    from core.term_sheet_fields import Installment, TermSheet
+    ts = TermSheet(project_name="Rooftop PV", payment_days="30", owner_name="Owner Co", installments=[Installment("1", "10", "Within 10 days", "Drawings")])
+    text = term_sheet_for_review(ts)
+    assert "Payment due within (working days): 30" in text and "Project name: Rooftop PV" in text and "payment_days" not in text
+    assert "Limits: cap on delay damages 5%" in text and "Within 10 days" not in text and "Drawings" not in text, "the installment rows are not sent"
+
+
+def test_a_change_the_user_asked_for_comes_with_the_users_words_and_the_prompt_says_what_to_do_with_it():
+    block = changes_text([{"id": "i1", "kind": "wording_change", "clause": "Completion Deadline", "text": "The Owner has the right ...",
+                           "user_words": "change delay damage to 0.5%"}])
+    assert "The user asked for this change: \u201cchange delay damage to 0.5%\u201d" in block
+    assert "The user asked for this change" not in changes_text(CHANGES), "no words, no line"
+    for prompt in (TERM_SHEET_PROMPT, CHANGES_PROMPT):
+        flat = " ".join(prompt.split())
+        assert "may come with the words of the user who asked for the change" in flat and "do not report that difference" in flat
+        assert "or says more than the user asked for" in flat
+
+
+def test_a_claim_written_as_name_and_value_is_judged_by_its_value():
+    sections = [Section("misc", "Miscellaneous", "This Agreement shall be governed by the laws of Thailand.")]
+    changes = [{"id": "c1", "kind": "wording_change", "clause": "Miscellaneous", "text": "This Agreement shall be governed by the laws of Thailand."}]
+    bad = finding(clause_key="misc", issue="Governing law discrepancy.", quote="governed by the laws of Thailand", term_sheet_says="governing_law: Thailand",
+                  fix_type="none", new_text="")
+    result = one(first(bad), sections, "governing_law: Thailand\nproject_name: PV", changes)
+    assert result.findings == [] and any("already agrees" in n for n in result.notes)
+    short = finding(clause_key="misc", issue="Period differs.", quote="governed by the laws of Thailand", term_sheet_says="payment_days: 30", fix_type="none", new_text="")
+    sections = [Section("misc", "Miscellaneous", "The Owner shall pay within 30 (thirty) working days.")]
+    changes = [{"id": "c1", "kind": "wording_change", "clause": "Miscellaneous", "text": "The Owner shall pay within 30 (thirty) working days."}]
+    short["quote"] = "pay within 30 (thirty) working days"
+    assert len(one(first(short), sections, "payment_days: 30\nproject_name: PV", changes).findings) == 1, "a value too short to judge is not used to drop a finding"
 
 
 # ---------------------------------------------------------------- when a call fails

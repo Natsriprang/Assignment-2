@@ -17,9 +17,8 @@ from types import SimpleNamespace
 
 import streamlit as st
 
-from ai.interpret import term_sheet_text
 from ai.llm import MODEL, AIStepError, CountingClient, get_client
-from ai.review import dependency_findings, review_draft, sections_of
+from ai.review import dependency_findings, review_draft, sections_of, term_sheet_for_review
 from core import wording
 from core.draft_state import library_for
 from core.header import build_header
@@ -49,7 +48,7 @@ def current_library():
 
 def current_changes():
     """What this draft changed or added compared with the template, as the sentences themselves (a clause taken out has none)."""
-    return [{"id": it["id"], "kind": it["kind"], "clause": it["clause"], "text": it["after"]} for it in risks.current_items()
+    return [{"id": it["id"], "kind": it["kind"], "clause": it["clause"], "text": it["after"], "user_words": it["user_words"]} for it in risks.current_items()
             if it["kind"] in ("wording_change", "new_clause") and it["after"]]
 
 
@@ -57,7 +56,7 @@ def current_input():
     """(term sheet text, sections of the draft as it stands now, the changed sentences)."""
     ts = clause_sandbox.current_term_sheet()
     block = build_signature_block(ts)
-    return term_sheet_text(ts, for_model=True), sections_of(current_library(), build_header(ts), signature_texts(block)[1:]), current_changes()
+    return term_sheet_for_review(ts), sections_of(current_library(), build_header(ts), signature_texts(block)[1:]), current_changes()
 
 
 def snapshot():
@@ -103,7 +102,7 @@ def current_text(run, f):
 def problem_with(f, text):
     if not text:
         return "There is no new wording yet."
-    problem = wording.check_rewrite(f.old_text if f.fix_type == "modify" else "", text, f.fix_type, f.quote, term_sheet_text(clause_sandbox.current_term_sheet(), for_model=True))
+    problem = wording.check_rewrite(f.old_text if f.fix_type == "modify" else "", text, f.fix_type, f.quote, term_sheet_for_review(clause_sandbox.current_term_sheet()))
     return "" if problem in ("The new wording does not contain the figure you asked for.",) else problem
 
 
@@ -261,7 +260,8 @@ def show():
         if "error" in result:
             st.warning(f"The review could not run: {plain(result['error'])}")
         else:
-            for note in result["notes"]:
+            checks = [n for n in result["notes"] if n.startswith(("Left out", "Dropped"))]
+            for note in [n for n in result["notes"] if n not in checks]:
                 st.caption(plain(note))
             run = result["run"]
             if result["findings"]:
@@ -272,6 +272,10 @@ def show():
             elif result["both_done"]:
                 st.caption("Both reads agree: no difference from the term sheet and no contradiction in the changes."
                            if not result["single"] else "No finding was made by both reads.")
+            if checks:
+                with st.expander(f"{len(checks)} finding(s) left out by the checks"):
+                    for note in checks:
+                        st.caption(plain(note))
             if result["single"]:
                 with st.expander(f"{len(result['single'])} finding(s) made by only one of the two reads (not shown as findings)"):
                     for f in result["single"]:

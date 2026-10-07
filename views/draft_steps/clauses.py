@@ -109,6 +109,28 @@ def show_lines(lines):
     for line in lines:
         st.write(plain(line))
 
+# The look of the chat of this step: the user's messages on the right, the assistant's on the left, as bubbles, with no avatars, and small
+# buttons inside the bubbles. The hooks are the test ids Streamlit puts on its chat elements and a mark placed in each message of the user;
+# when a hook is not there the chat simply looks as it did, and nothing stops working.
+USER_MARK = '<span class="chat-user-mark"></span>'
+CHAT_CSS = """<style>
+[data-testid="stChatMessageAvatarUser"], [data-testid="stChatMessageAvatarAssistant"], [data-testid="stChatMessageAvatarCustom"] { display: none; }
+[data-testid="stChatMessage"] { background: transparent; padding: 0.2rem 0; }
+[data-testid="stChatMessage"]:has(.chat-user-mark) { flex-direction: row-reverse; }
+[data-testid="stChatMessageContent"] { border-radius: 16px; padding: 0.55rem 0.9rem; background: rgba(128, 128, 128, 0.08); max-width: 92%; }
+[data-testid="stChatMessage"]:has(.chat-user-mark) [data-testid="stChatMessageContent"] { background: rgba(70, 130, 220, 0.16); max-width: 80%; width: fit-content; }
+[data-testid="stChatMessage"] button { font-size: 0.8rem; padding: 0.1rem 0.6rem; min-height: 1.8rem; }
+[data-testid="stChatMessage"] button p { font-size: 0.8rem; }
+[data-testid="stChatMessage"] h3 { font-size: 1rem; padding: 0.2rem 0; }
+</style>"""
+
+
+def show_user_message(text):
+    """The user's message in its bubble (the mark puts the bubble on the right)."""
+    st.markdown(USER_MARK, unsafe_allow_html=True)
+    show_lines(text.split("\n"))
+
+
 
 def has_analysis():
     """True once the model has analysed the request at least once in this run."""
@@ -340,7 +362,8 @@ def content_for_model(msg):
     for e in [e for e in msg.get("applied_entries") or [] if still_applied(e)]:
         what = (e["heading"] if e["kind"] in ("clause", "new_clause")
                 else f"wording change in {e['heading']}: {e['requested_change']}")
-        lines.append(f"Applied to the draft: {what} (the user's words: \u201c{e['evidence']}\u201d). This request is done.")
+        lines.append(f"Applied to the draft: {what} (the user's words: \u201c{e['evidence']}\u201d). This request is done. "
+                     "Any other request in the same message is not done by it.")
     return "\n".join(lines)
 
 
@@ -394,7 +417,7 @@ def apply_deviation(msg, d):
     else:
         notes.pop(key, None)
         entry = {"kind": "wording", "key": d.clause_key, "heading": f"{title}: {d.summary}", "requested_change": d.requested_change,
-                 "number": deviation_number(d), "evidence": d.evidence, "change_type": d.change_type, "old": d.old_text,
+                 "number": deviation_number(d), "evidence": d.evidence, "quote": d.provision_quote, "change_type": d.change_type, "old": d.old_text,
                  "new": "" if removing else text, "removed": removing, "drafted_id": drafted_id, "saved_before": saved_before,
                  "edit_id": None if drafted_id is not None else widget_key("edit", d.clause_key, "remove" if removing else d.change_type, d.old_text, text)}
         log_applied([entry])
@@ -783,6 +806,7 @@ def render_results(msg, clauses, turn, stale, all_clauses=None):
 
 
 def render():
+    st.markdown(CHAT_CSS, unsafe_allow_html=True)
     st.caption("Choose which clauses are in the draft. Tick them yourself, or tell the assistant what "
                "you want changed and apply what it proposes.")
 
@@ -853,14 +877,19 @@ def render():
                 skip = st.button(NO_REQUEST_BUTTON, disabled=client is None)
                 st.caption(NO_REQUEST_NOTE)
 
+    quick_reply = draft_request = None
     for i, msg in enumerate(chat):
         with st.chat_message(msg["role"]):
             if msg["role"] == "assistant" and "result" in msg:
                 show_lines([display_text(msg["result"], latest=i == last_idx)])
+                if i == last_idx:                       # the proposals and their buttons sit under what the assistant wrote
+                    quick_reply, draft_request = render_results(latest, clauses, len(chat), stale, all_clauses)
+            elif msg["role"] == "user":
+                show_user_message(msg["content"])
             else:
                 show_lines(msg["content"].split("\n"))
-
-    quick_reply, draft_request = render_results(latest, clauses, len(chat), stale, all_clauses)
+    if latest is None:
+        quick_reply, draft_request = render_results(latest, clauses, len(chat), stale, all_clauses)
 
     if client is not None and draft_request:
         entry_id, request_text = draft_request
@@ -895,7 +924,7 @@ def render():
         if text:
             chat.append({"role": "user", "content": text})
             with st.chat_message("user"):
-                show_lines(text.split("\n"))
+                show_user_message(text)
         with st.chat_message("assistant"):
             with st.spinner("Reading the additional conditions..." if auto else "Thinking..."):
                 error = None

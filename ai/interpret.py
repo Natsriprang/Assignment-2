@@ -106,6 +106,15 @@ Lines of your earlier replies that start with "Applied to the draft:" are reques
 the clause text you are given. Never list them again, in any list and never as a question, even though the user's \
 earlier message still asks for it. Only a new request from the user about the same provision is new.
 
+A user message may hold several requests. Give each request its own evidence: only the words of that request, never the whole \
+message. A line that starts with "Applied to the draft:" is done only for the request it describes. Any other request in the same \
+user message is not done until it has an "Applied to the draft:" line of its own, so list it as a new request.
+
+The caps on damages ("Cap on delay damages" and "Cap on total damages deducted", shown on the term sheet's "limits" line) are term \
+sheet settings, not wording. If the user asks to change, lower, raise or remove one of those caps, make no deviation and no exclusion \
+for it. Record an ambiguity written as a question that names the setting, for example: "The cap on delay damages is a setting on the \
+Term sheet page. Do you want to change it there?"
+
 The conversation lists the user's messages and your earlier replies. Treat all of the user's messages \
 together as the request, and produce the complete current result every time, not only what is new. \
 Your earlier replies only record what was already proposed or asked. If the user answered a question \
@@ -692,6 +701,19 @@ def _same_request(new, stored):
     return len(stored) >= 8 and stored in new and bool(_QUICK_REPLY.match(new))
 
 
+def _another_part(a, b):
+    """True when two quotes of a clause are about different parts of it: both are written, neither holds the other, and the words that say
+    what they are about (leaving out the plain words every clause uses, such as "the", "percent" and "contract") overlap by less than half of
+    the shorter one. An empty quote says nothing, so it is never "another part"."""
+    a, b = _norm(a), _norm(b)
+    if not a or not b or a in b or b in a:
+        return False
+    plain_words = {w.lower() for w in GENERIC_WORDS}
+    wa = {w for w in re.findall(r"[a-z0-9.]+", a) if w not in plain_words}
+    wb = {w for w in re.findall(r"[a-z0-9.]+", b) if w not in plain_words}
+    return bool(wa and wb) and len(wa & wb) / min(len(wa), len(wb)) < 0.5
+
+
 def settle(result, library, pending=(), applied_edits=(), applied_entries=(), declined=()):
     """Keeps the picture stable from one reply to the next, in code, whatever the model re-lists.
     `pending` are the wording changes an earlier reply proposed that the user has neither applied nor rejected: they stay
@@ -705,23 +727,34 @@ def settle(result, library, pending=(), applied_edits=(), applied_entries=(), de
     Mutates and returns `result`."""
     by_key = {c.key: c for c in library}
 
-    def done(evidence, key=None):
-        return any(_same_request(evidence, e["evidence"]) and (key is None or e["key"] == key) for e in applied_entries)
+    def done(evidence, key=None, quote=""):
+        """True when this item is a request the user has applied: the same words of the user, the same clause and the same part of the clause.
+        One message may hold two requests; the second is another part of the clause, and is not done because the first was applied."""
+        for e in applied_entries:
+            if not _same_request(evidence, e["evidence"]) or (key is not None and e["key"] != key):
+                continue
+            if _another_part(quote, e.get("quote", "")):
+                continue
+            return True
+        return False
 
     if applied_entries:
-        for name, key_of, text_of in (("deviations", lambda x: x.clause_key, lambda x: x.evidence),
-                                      ("clause_actions", lambda x: x.clause_key, lambda x: x.evidence),
-                                      ("unmapped_requests", lambda x: None, lambda x: x.evidence or x.request)):
+        for name, key_of, text_of, quote_of in (("deviations", lambda x: x.clause_key, lambda x: x.evidence, lambda x: x.provision_quote),
+                                                ("clause_actions", lambda x: x.clause_key, lambda x: x.evidence, lambda x: ""),
+                                                ("unmapped_requests", lambda x: None, lambda x: x.evidence or x.request,
+                                                 lambda x: x.candidate_quote if x.candidate_key else "")):
             keep = []
             for item in getattr(result, name):
-                if done(text_of(item), key_of(item)):
+                if done(text_of(item), key_of(item), quote_of(item)):
                     result.notes.append("Dropped a request that is already applied to the draft.")
                 else:
                     keep.append(item)
             setattr(result, name, keep)
 
     def figures(u):
-        return numbers_in(f"{u.request} {u.evidence} {u.candidate_change}")
+        """The figures of the request itself, as the model wrote it. The user's words (`evidence`) are left out: when one message holds two
+        requests they hold the figures of both, and the second request would look like the first."""
+        return numbers_in(f"{u.request} {u.candidate_change}") or (numbers_in(u.evidence) if not (u.request or u.candidate_change) else set())
 
     gone = [e for e in applied_edits if e.get("change_type") == "remove"]
     if declined:
