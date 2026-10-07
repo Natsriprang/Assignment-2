@@ -491,7 +491,8 @@ def show(result):
 
 def run_live():
     from ai.llm import get_client
-    client = get_client()
+    import os
+    client = get_client(os.getenv("OPENAI_API_KEY"))        # the live runs are a developer tool: the key comes from the environment here, not in the app
     if client is None:
         sys.exit("Set OPENAI_API_KEY (or put it in .env) to run live cases.")
     lib = build_library()

@@ -10,8 +10,9 @@ MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")
 
 
 def get_client(api_key=None):
-    """Returns an OpenAI client, or None when no key is available."""
-    key = api_key or os.getenv("OPENAI_API_KEY")
+    """Returns an OpenAI client for the key the user typed in, or None when there is none. There is no fallback to an
+    environment variable or the .env file: every user enters their own key."""
+    key = (api_key or "").strip()
     if not key:
         return None
     from openai import OpenAI  # imported lazily so offline tests don't need the package
