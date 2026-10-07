@@ -349,7 +349,7 @@ def build_library():
                  "the Parties shall seek an amicable resolution through formal negotiations "
                  "between senior officials of both Parties."),
             Item("This Agreement shall be governed by and interpreted in accordance with the "
-                 "laws of "[*]"."),
+                 "laws of [*]."),
         ], category="general"),
     ]
 
