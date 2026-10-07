@@ -5,6 +5,7 @@ It does not draft text or judge legal risk; later phases do that. Everything the
 validated in code before it is shown: unknown clause keys are rejected, no-ops and conflicts are
 removed, quoted evidence is checked against the real input, and every requested wording change must
 point at text that actually exists in the clause it names."""
+import difflib
 import json
 import re
 from dataclasses import dataclass, field
@@ -110,10 +111,9 @@ A user message may hold several requests. Give each request its own evidence: on
 message. A line that starts with "Applied to the draft:" is done only for the request it describes. Any other request in the same \
 user message is not done until it has an "Applied to the draft:" line of its own, so list it as a new request.
 
-The caps on damages ("Cap on delay damages" and "Cap on total damages deducted", shown on the term sheet's "limits" line) are term \
-sheet settings, not wording. If the user asks to change, lower, raise or remove one of those caps, make no deviation and no exclusion \
-for it. Record an ambiguity written as a question that names the setting, for example: "The cap on delay damages is a setting on the \
-Term sheet page. Do you want to change it there?"
+A cap on damages, such as "but not more than 5 (five) percent of the Contract Price", is part of the sentence it is written in. A request to \
+take such a cap out, or to lower or raise it, is an ordinary wording change on that sentence: use "remove_part" to take the cap out and \
+"modify" to change its figure, and copy the cap's own words as provision_quote. Do not answer it with a question about where the cap is set.
 
 The conversation lists the user's messages and your earlier replies. Treat all of the user's messages \
 together as the request, and produce the complete current result every time, not only what is new. \
@@ -329,9 +329,10 @@ def _term_in_clause(term, clause):
     return not words or bool(words & _stems(clause_text(clause)))
 
 
-def validate(raw, library, haystack, assistant_text=""):
+def validate(raw, library, haystack, assistant_text="", answering=False):
     """Turns the model's raw dict into an Interpretation, applying deterministic checks.
-    `assistant_text` is the assistant's earlier replies; it only proves a question was asked."""
+    `assistant_text` is the assistant's earlier replies; it only proves a question was asked. `answering` is True when the user's last message
+    answers a question of the assistant: a short answer such as \"change it here\" does not repeat the words of the provision."""
     by_key = {c.key: c for c in library}
     raw = _clean_raw(raw)
     from_conditions = _condition_texts(haystack)
@@ -455,7 +456,8 @@ def validate(raw, library, haystack, assistant_text=""):
         if _attach_rewrite(deviation, clause, d):
             out.notes.append(f"Dropped a wording change on '{clause.title}': it already has that wording.")
             continue
-        if deviation.old_text and deviation.evidence_verified and not user_confirmed and not _request_matches_unit(deviation):
+        short_answer = answering and len(deviation.evidence.split()) <= SHORT_ANSWER_WORDS
+        if deviation.old_text and deviation.evidence_verified and not user_confirmed and not short_answer and not _request_matches_unit(deviation):
             out.unmapped_requests.append(UnmappedRequest(                 # the model picked a provision the request is not about
                 deviation.requested_change or deviation.summary, deviation.evidence, True, key, deviation.old_text,
                 "The words of your request are not in this provision.", deviation.requested_change))
@@ -476,6 +478,9 @@ def _content_stems(text):
     """The words of a text that say what it is about: no short words, no filler, no instruction words."""
     ignore = {_stem(w) for w in GENERIC_WORDS | _REQUEST_WORDS}
     return {s for s in (_stem(w) for w in re.findall(r"[a-z]+", (text or "").lower()) if len(w) > 2) if s not in ignore}
+
+
+SHORT_ANSWER_WORDS = 6                # an answer of up to this many words to a question is not checked for the words of the provision
 
 
 def _request_matches_unit(deviation):
@@ -830,6 +835,33 @@ def settle(result, library, pending=(), applied_edits=(), applied_entries=(), de
     return result
 
 
+def asked_before(conversation):
+    """The questions the assistant put to the user in earlier replies that the user has answered since: every "Question: ..." line of an
+    assistant reply that is followed by a message of the user."""
+    asked = []
+    for i, m in enumerate(conversation):
+        if m["role"] == "assistant" and any(x["role"] == "user" for x in conversation[i + 1:]):
+            asked += [line[len("Question: "):] for line in m["content"].splitlines() if line.startswith("Question: ")]
+    return asked
+
+
+def drop_repeated_questions(result, conversation):
+    """A question is asked once. When the reply acts on the user's answer (it proposes a change or a clause action) and still lists a question
+    that an earlier reply already asked, the user has answered it and it is not listed again, whether the model repeated it word for word or
+    nearly so. A reply that has nothing else to say keeps its question: it may be that the answer was not clear."""
+    if not (result.clause_actions or result.deviations):
+        return result
+    earlier = [_norm(q) for q in asked_before(conversation)]
+    kept = []
+    for q in result.ambiguities:
+        if any(difflib.SequenceMatcher(None, _norm(q), e).ratio() >= 0.85 for e in earlier):
+            result.notes.append("Dropped a question that was already asked and answered.")
+        else:
+            kept.append(q)
+    result.ambiguities = kept
+    return result
+
+
 def interpret_request(ts, library, client, model=MODEL, conversation=None, pending=(), applied_edits=(), applied_entries=(), declined=()):
     """AI call 1. `conversation` is a list of {"role": "user" | "assistant", "content": str}.
     `client` is any object exposing the OpenAI chat.completions interface. `pending` and `applied_edits` keep the result
@@ -863,8 +895,11 @@ def interpret_request(ts, library, client, model=MODEL, conversation=None, pendi
 
     user_text = "\n".join(m["content"] for m in conversation if m["role"] == "user")
     assistant_text = "\n".join(m["content"] for m in conversation if m["role"] == "assistant")
-    result = validate(raw, library, "\n".join([term_sheet_text(ts, for_model=True), user_text]), assistant_text)
+    last_assistant = next((m["content"] for m in reversed(conversation) if m["role"] == "assistant"), "")
+    answering = bool(conversation) and conversation[-1]["role"] == "user" and "Question:" in last_assistant
+    result = validate(raw, library, "\n".join([term_sheet_text(ts, for_model=True), user_text]), assistant_text, answering)
     result = drop_roof_owner_false_alarm(result, ts)
+    result = drop_repeated_questions(result, conversation)
     return settle(result, library, pending, applied_edits, applied_entries, declined)
 
 

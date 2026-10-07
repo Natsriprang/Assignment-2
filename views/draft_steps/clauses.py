@@ -117,8 +117,9 @@ CHAT_CSS = """<style>
 [data-testid="stChatMessageAvatarUser"], [data-testid="stChatMessageAvatarAssistant"], [data-testid="stChatMessageAvatarCustom"] { display: none; }
 [data-testid="stChatMessage"] { background: transparent; padding: 0.2rem 0; }
 [data-testid="stChatMessage"]:has(.chat-user-mark) { flex-direction: row-reverse; }
-[data-testid="stChatMessageContent"] { border-radius: 16px; padding: 0.55rem 0.9rem; background: rgba(128, 128, 128, 0.08); max-width: 92%; }
-[data-testid="stChatMessage"]:has(.chat-user-mark) [data-testid="stChatMessageContent"] { background: rgba(70, 130, 220, 0.16); max-width: 80%; width: fit-content; }
+[data-testid="stChatMessageContent"] { border-radius: 16px; padding: 0.55rem 0.9rem; background: rgba(128, 128, 128, 0.08); max-width: 90%; margin-right: auto; }
+[data-testid="stChatMessage"]:has(.chat-user-mark) [data-testid="stChatMessageContent"] { background: rgba(70, 130, 220, 0.18); max-width: 100%; margin-left: auto; margin-right: 0;
+  border-bottom-right-radius: 4px; }
 [data-testid="stChatMessage"] button { font-size: 0.8rem; padding: 0.1rem 0.6rem; min-height: 1.8rem; }
 [data-testid="stChatMessage"] button p { font-size: 0.8rem; }
 [data-testid="stChatMessage"] h3 { font-size: 1rem; padding: 0.2rem 0; }
@@ -126,9 +127,13 @@ CHAT_CSS = """<style>
 
 
 def show_user_message(text):
-    """The user's message in its bubble (the mark puts the bubble on the right)."""
-    st.markdown(USER_MARK, unsafe_allow_html=True)
-    show_lines(text.split("\n"))
+    """The user's message, on the right: in the right-hand column of a row, so that it is on the right whatever the styles do, with the mark that
+    gives its bubble the user's colour. (The assistant's reply is not put in a column: it holds boxes that use columns themselves.)"""
+    _, right = st.columns([1, 3])
+    with right:
+        with st.chat_message("user"):
+            st.markdown(USER_MARK, unsafe_allow_html=True)
+            show_lines(text.split("\n"))
 
 
 
@@ -879,13 +884,14 @@ def render():
 
     quick_reply = draft_request = None
     for i, msg in enumerate(chat):
+        if msg["role"] == "user":
+            show_user_message(msg["content"])
+            continue
         with st.chat_message(msg["role"]):
             if msg["role"] == "assistant" and "result" in msg:
                 show_lines([display_text(msg["result"], latest=i == last_idx)])
                 if i == last_idx:                       # the proposals and their buttons sit under what the assistant wrote
                     quick_reply, draft_request = render_results(latest, clauses, len(chat), stale, all_clauses)
-            elif msg["role"] == "user":
-                show_user_message(msg["content"])
             else:
                 show_lines(msg["content"].split("\n"))
     if latest is None:
@@ -923,8 +929,7 @@ def render():
     if client is not None and (text or skip):
         if text:
             chat.append({"role": "user", "content": text})
-            with st.chat_message("user"):
-                show_user_message(text)
+            show_user_message(text)
         with st.chat_message("assistant"):
             with st.spinner("Reading the additional conditions..." if auto else "Thinking..."):
                 error = None

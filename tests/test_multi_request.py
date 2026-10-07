@@ -89,12 +89,73 @@ def test_the_prompt_says_each_request_has_its_own_evidence_and_done_covers_only_
         assert phrase in flat, phrase
 
 
-def test_the_caps_on_damages_are_term_sheet_settings_and_a_request_to_change_them_is_a_question():
+def test_a_cap_on_damages_is_part_of_its_sentence_and_a_request_about_it_is_an_ordinary_wording_change():
     flat = " ".join(SYSTEM_PROMPT.split())
-    for phrase in ("Cap on delay damages", "Cap on total damages deducted", "are term sheet settings, not wording", "make no deviation and no exclusion",
-                   "The cap on delay damages is a setting on the Term sheet page"):
+    for phrase in ("A cap on damages", "is part of the sentence it is written in", "use \"remove_part\" to take the cap out", "\"modify\" to change its figure",
+                   "Do not answer it with a question about where the cap is set"):
         assert phrase in flat, phrase
+    assert "term sheet settings" not in flat and "setting on the Term sheet page" not in flat, "no question that has no answer buttons"
     assert "\\" not in SYSTEM_PROMPT
+
+
+# ---------------------------------------------------------------- a question is asked once
+ASKED = "The cap on delay damages is a setting on the Term sheet page. Do you want to change it there?"
+CAP_CONVERSATION = [{"role": "user", "content": "remove limit"}, {"role": "assistant", "content": f"Question: {ASKED}"}, {"role": "user", "content": "no"}]
+BASE = library_for({}, None, None, TS)
+
+
+def reply_to_the_answer(payload, conversation=CAP_CONVERSATION):
+    return interpret_request(TS, BASE, FakeClient(payload), conversation=conversation)
+
+
+def cap_change(match="same_term"):
+    return dev("completion_deadline", CAP, change_type="remove_part", change="remove cap on delay damages", evidence="change it here", term="delay damage", match=match)
+
+
+def test_a_question_the_user_has_answered_is_not_listed_again_when_the_reply_acts_on_the_answer():
+    result = reply_to_the_answer(empty(deviations=[cap_change()], ambiguities=[ASKED]))
+    assert [d.requested_change for d in result.deviations] == ["remove cap on delay damages"]
+    assert result.ambiguities == [] and "Dropped a question that was already asked and answered." in result.notes
+
+
+def test_a_question_asked_again_in_nearly_the_same_words_is_dropped_too():
+    reworded = "The cap on delay damages is a setting on the Term sheet page. Would you like to change it there?"
+    assert reply_to_the_answer(empty(deviations=[cap_change()], ambiguities=[reworded])).ambiguities == []
+
+
+def test_a_new_question_stays():
+    other = "Is the 0.5% per day or per year?"
+    assert reply_to_the_answer(empty(deviations=[cap_change()], ambiguities=[ASKED, other])).ambiguities == [other]
+
+
+def test_a_reply_with_nothing_else_to_say_keeps_its_question_because_the_answer_may_not_have_been_clear():
+    result = reply_to_the_answer(empty(ambiguities=[ASKED]))
+    assert result.ambiguities == [ASKED] and result.deviations == []
+
+
+def test_a_question_not_yet_answered_is_not_counted_as_asked():
+    waiting = [{"role": "user", "content": "remove limit"}, {"role": "assistant", "content": f"Question: {ASKED}"}]
+    assert reply_to_the_answer(empty(deviations=[cap_change()], ambiguities=[ASKED]), waiting).ambiguities == [ASKED], "no message of the user came after it"
+
+
+# ---------------------------------------------------------------- a short answer typed to a question
+def test_a_short_answer_to_a_question_does_not_need_the_words_of_the_provision():
+    result = reply_to_the_answer(empty(deviations=[cap_change()]))
+    assert [d.requested_change for d in result.deviations] == ["remove cap on delay damages"] and not result.unmapped_requests
+
+
+def test_the_same_words_are_checked_when_they_answer_nothing():
+    no_question = [{"role": "user", "content": "change it here"}]
+    result = reply_to_the_answer(empty(deviations=[cap_change()]), no_question)
+    assert result.deviations == [] and len(result.unmapped_requests) == 1, "turned into a question: the provision does not contain the words"
+
+
+def test_a_long_message_is_checked_even_when_it_comes_after_a_question():
+    long_words = "please change the colour of the cover page to something calmer and quieter"
+    conversation = CAP_CONVERSATION[:2] + [{"role": "user", "content": long_words}]
+    long_dev = dev("completion_deadline", CAP, change_type="remove_part", change="remove cap on delay damages", evidence=long_words, term="delay damage")
+    result = reply_to_the_answer(empty(deviations=[long_dev]), conversation)
+    assert result.deviations == [], "more than a short answer: the words are checked"
 
 
 if __name__ == "__main__":
