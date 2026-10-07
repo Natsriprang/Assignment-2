@@ -1,14 +1,16 @@
-"""What the summary of the contract takes from the term sheet and from the draft by code, without any AI: the table of facts, the figures that
-the AI is allowed to write, and the line that says how much of the contract was summarised. Pure code.
+"""What the summary of the contract takes from the term sheet and from the draft by code, without any AI: the table of facts, the exact words
+that were changed from the template, and the figures that the AI is allowed to write. Pure code.
 
 The table of facts is code because it must be right: the parties, the price, the dates and the caps are written from the term sheet, so they
 cannot be wrong. The AI writes only what the facts do not say, and every figure it writes is checked against the clause and the term sheet."""
+import difflib
 import re
 from decimal import Decimal, InvalidOperation
 
 from core.clause_params import limits_of, limits_text
 from core.governing_law import law_name
 from core.vat import vat_choice
+from core.wording import norm
 from core.signatures import names_of
 
 _DIGITS = re.compile(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?")
@@ -95,10 +97,33 @@ def unsupported_figures(text, allowed):
     return sorted(digit_figures(text) - allowed)
 
 
-def coverage_text(summarised, skipped, standard_titles):
-    """The line under the summary: how many clauses it covers and which it left out as standard wording."""
-    total = summarised + skipped
-    line = f"Summarised {summarised} of {total} clauses"
-    if skipped:
-        line += f"; left out {skipped} that use the template's standard wording with nothing specific to this deal"
-    return line + "."
+def word_changes(before, after):
+    """[(removed, added)]: the words that differ between two versions of a sentence, as they are written ("0.05 (zero point zero five)" and
+    "0.5 (zero point five)"). A side with nothing is "". Case and the punctuation at the end of a word do not count as a difference, so a
+    full stop that moves to the end of the sentence does not show as a change. Changes that are only a word or two apart are one change, and
+    a bracket that a change opens is closed in it, so that a figure and its words in brackets are shown whole."""
+    b, a = norm(before).split(), norm(after).split()
+    clean = lambda words: [w.lower().strip(".,;:") for w in words]
+    matcher = difflib.SequenceMatcher(None, clean(b), clean(a), autojunk=False)
+    spans = []
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            continue
+        if spans and i1 - spans[-1][1] <= 2:                          # one or two words between: the same change
+            spans[-1][1], spans[-1][3] = i2, j2
+        else:
+            spans.append([i1, i2, j1, j2])
+    out = []
+    for i1, i2, j1, j2 in spans:
+        while (" ".join(b[i1:i2]).count("(") > " ".join(b[i1:i2]).count(")") or " ".join(a[j1:j2]).count("(") > " ".join(a[j1:j2]).count(")")) \
+                and i2 < len(b) and j2 < len(a):
+            i2, j2 = i2 + 1, j2 + 1
+        out.append((" ".join(b[i1:i2]).strip(" .,;:"), " ".join(a[j1:j2]).strip(" .,;:")))
+    return out
+
+
+def change_line(removed, added):
+    """One change as a line: “0.05 (zero point zero five)” → “0.5 (zero point five)”, or taken out / added."""
+    if removed and added:
+        return f"\u201c{removed}\u201d \u2192 \u201c{added}\u201d"
+    return f"taken out: \u201c{removed}\u201d" if removed else f"added: \u201c{added}\u201d"
