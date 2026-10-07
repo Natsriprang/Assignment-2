@@ -59,11 +59,11 @@ def show_findings(findings):
         with st.container(border=True):
             st.markdown(f"**{LABEL[f.severity]} \u00b7 {plain(f.clause)}**")
             st.write(plain(f.issue))
-            st.caption(f"Risk to: {f.party}. Why: {plain(f.why)}")
+            st.write(f"Risk to: {f.party}. Why: {plain(f.why)}")
             if f.suggestion:
-                st.caption(f"Consider: {plain(f.suggestion)}")
+                st.write(f"Consider: {plain(f.suggestion)}")
             if f.quote_verified:
-                st.caption(f"In the draft: \u201c{plain(f.quote)}\u201d")
+                st.write(f"In the draft: \u201c{plain(f.quote)}\u201d")
 
 
 def show():
@@ -72,7 +72,7 @@ def show():
     result = st.session_state.get(RESULT_KEY)
     st.subheader("Risks to review")
     if not items:
-        st.caption("No changes from the standard template to assess.")
+        st.write("No changes from the standard template to assess.")
         return
     client = get_client(st.session_state.get("openai_api_key"))
     snap = snapshot(items)
@@ -81,19 +81,19 @@ def show():
         run_check(items, client)
         result = st.session_state.get(RESULT_KEY)
     if result is None:
-        st.caption("The risks of the changes were not checked yet. Enter an API key to check them." if client is None
+        st.write("The risks of the changes were not checked yet. Enter an API key to check them." if client is None
                    else "The risks of the changes were not checked yet.")
     else:
         if result["snapshot"] != snap:
-            st.caption("The draft changed since the risks were last checked. This is what that check found; press Recheck risks to check again.")
+            st.write("The draft changed since the risks were last checked. This is what that check found; press Recheck risks to check again.")
         if "error" in result:
-            st.warning(f"The risk check could not run: {plain(result['error'])}")
+            st.write(f"The risk check could not run: {plain(result['error'])}")
         elif result["findings"]:
-            st.warning(f"{len(result['findings'])} point(s) to review in the changes you made to the standard template. "
+            st.write(f"{len(result['findings'])} point(s) to review in the changes you made to the standard template. "
                        "Nothing was changed, and you can still download the draft.")
             show_findings(result["findings"])
         else:
-            st.caption("No significant risks were found in the changes to the standard template.")
+            st.write("No significant risks were found in the changes to the standard template.")
     if client is not None and st.button("Recheck risks" if result is not None else "Check risks", key="risk_recheck"):
         run_check(items, client)
         st.rerun()
