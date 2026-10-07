@@ -45,7 +45,7 @@ def current_input():
     """(term sheet text, sections of the draft as it stands now)."""
     ts = clause_sandbox.current_term_sheet()
     block = build_signature_block(ts)
-    return term_sheet_text(ts), sections_of(current_library(), build_header(ts), signature_texts(block)[1:])
+    return term_sheet_text(ts, for_model=True), sections_of(current_library(), build_header(ts), signature_texts(block)[1:])
 
 
 def snapshot():
@@ -90,7 +90,7 @@ def current_text(run, f):
 def problem_with(f, text):
     if not text:
         return "There is no new wording yet."
-    problem = wording.check_rewrite(f.old_text if f.fix_type == "modify" else "", text, f.fix_type, f.quote, term_sheet_text(clause_sandbox.current_term_sheet()))
+    problem = wording.check_rewrite(f.old_text if f.fix_type == "modify" else "", text, f.fix_type, f.quote, term_sheet_text(clause_sandbox.current_term_sheet(), for_model=True))
     return "" if problem in ("The new wording does not contain the figure you asked for.",) else problem
 
 
@@ -181,6 +181,8 @@ def show_finding(run, f):
         st.write(plain(f.issue))
         if f.why:
             st.caption(f"Why: {plain(f.why)}")
+        if f.term_sheet_says:
+            st.caption(f"The term sheet says: \u201c{plain(f.term_sheet_says)}\u201d")
         if f.quote_verified:
             st.caption(f"In the draft: \u201c{plain(f.quote)}\u201d")
         if f.fix_type == "none":

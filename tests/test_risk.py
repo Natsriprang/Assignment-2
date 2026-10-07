@@ -28,6 +28,14 @@ def items(included=None, edits=(), **kw):
     return build_items(TEMPLATE_TEXT, DEFAULT, OPTIONAL, state, list(edits), **kw)
 
 
+# ---------------------------------------------------------------- the prompt
+def test_the_prompt_says_who_the_draft_is_for_and_to_work_out_the_direction_of_a_change():
+    flat = " ".join(SYSTEM_PROMPT.split())
+    assert "prepared for the Contractor" in flat and "work out the direction of the change" in flat
+    assert "calendar days is a shorter period than the same number of working days" in flat
+    assert "\\" not in SYSTEM_PROMPT, "a line continuation in the source must not leave a backslash in the prompt"
+
+
 # ---------------------------------------------------------------- the changes from the template
 def test_a_draft_that_is_the_template_has_no_changes():
     assert items() == []

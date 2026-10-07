@@ -33,8 +33,9 @@ class SeqClient:
 
 
 def finding(clause_key="completion_deadline", issue="The damages rate is not what the term sheet says.", why="Term sheet: 0.03% per day.",
-            quote="0.05 (zero point zero five)", fix_type="modify", new_text=LD_NEW):
-    return {"clause_key": clause_key, "issue": issue, "why": why, "quote": quote, "fix_type": fix_type, "new_text": new_text}
+            quote="0.05 (zero point zero five)", fix_type="modify", new_text=LD_NEW, term_sheet_says="delay damages 0.03% per day"):
+    return {"clause_key": clause_key, "issue": issue, "why": why, "term_sheet_says": term_sheet_says, "quote": quote, "fix_type": fix_type,
+            "new_text": new_text}
 
 
 def first(*findings):
@@ -61,7 +62,7 @@ def test_the_second_call_is_given_the_findings_of_the_first_with_their_ids():
     client = SeqClient(first(finding()), second())
     run(client)
     content = client.calls[1]["messages"][1]["content"]
-    assert "[f1] section: completion_deadline" in content and "TERM SHEET:" in content and "[key: completion_deadline" in content
+    assert "[f1] section: completion_deadline" in content and "term sheet says: delay damages 0.03% per day" in content and "TERM SHEET:" in content and "[key: completion_deadline" in content
 
 
 # ---------------------------------------------------------------- a finding and its fix
@@ -110,6 +111,72 @@ def test_a_draft_that_is_only_text_has_no_fixes():
     sections = [Section("draft", "The draft", LD_OLD)]
     f = run(SeqClient(first(finding("draft")), second()), sections).findings[0]
     assert f.quote_verified and f.fix_type == "none"
+
+
+# ---------------------------------------------------------------- evidence, and findings that name no difference
+def test_a_finding_with_no_evidence_is_left_out():
+    result = run(SeqClient(first(finding(GENERAL, quote="", term_sheet_says="", fix_type="none", new_text="")), second()))
+    assert result.findings == [] and any("nothing to show for it" in n for n in result.notes)
+
+
+def test_term_sheet_words_that_are_not_in_the_term_sheet_are_blanked_but_a_quote_from_the_draft_keeps_the_finding():
+    f = run(SeqClient(first(finding(term_sheet_says="rate of 9% a day")), second())).findings[0]
+    assert f.term_sheet_says == "" and f.quote_verified
+
+
+def test_a_finding_that_says_the_draft_differs_when_it_already_says_it_is_left_out():
+    sections = [Section("misc", "Miscellaneous", "This Agreement shall be governed by the laws of Thailand.")]
+    ts = "governing_law: Thailand\nproject_name: PV"
+    bad = finding("misc", issue="Governing law discrepancy.", quote="governed by the laws of Thailand", term_sheet_says="Thailand", fix_type="none", new_text="")
+    result = run(SeqClient(first(bad), second()), sections, ts)
+    assert result.findings == [] and any("already agrees" in n and "Governing law discrepancy" in n for n in result.notes)
+
+
+def test_a_real_difference_in_the_same_clause_stays():
+    sections = [Section("misc", "Miscellaneous", "This Agreement shall be governed by the laws of Victoria.")]
+    ts = "governing_law: Thailand\nproject_name: PV"
+    real = finding("misc", issue="Governing law differs.", quote="laws of Victoria", term_sheet_says="governing_law: Thailand", fix_type="none", new_text="")
+    assert [f.issue for f in run(SeqClient(first(real), second()), sections, ts).findings] == ["Governing law differs."]
+
+
+# ---------------------------------------------------------------- amounts and table cells
+PRICE_OLD = "The Owner agrees to pay the Contractor the fixed total amount of THB 1,000,000 (One million), exclusive of VAT."
+
+
+def price_run(new_text, ts):
+    from core.clauses import Clause, Item
+    clause = Clause(key="price", title="Price", items=[Item(PRICE_OLD)], category="general")
+    sections = [Section("price", "Price", PRICE_OLD, clause)]
+    one = finding("price", issue="The price in words differs.", quote="THB 1,000,000 (One million)", term_sheet_says="One-hundred Thousand", new_text=new_text)
+    return run(SeqClient(first(one), second()), sections, ts).findings[0]
+
+
+def test_a_fix_that_makes_an_amount_and_its_words_disagree_is_not_offered():
+    ts = "contract_price_number: 1,000,000\ncontract_price_words: One-hundred Thousand"
+    f = price_run(PRICE_OLD.replace("(One million)", "(One-hundred Thousand)"), ts)
+    assert f.fix_type == "none" and "do not agree" in f.fix_note and "One-hundred Thousand" in f.fix_note
+    assert f.term_sheet_says == "One-hundred Thousand" and f.quote_verified, "the finding itself stays"
+
+
+def test_a_fix_whose_amount_and_words_agree_is_offered():
+    ts = "contract_price_number: 1,500,000\ncontract_price_words: One million five hundred thousand"
+    f = price_run(PRICE_OLD.replace("1,000,000 (One million)", "1,500,000 (One million five hundred thousand)"), ts)
+    assert f.fix_type == "modify" and "1,500,000" in f.new_text
+
+
+def test_a_table_cell_gets_no_fix():
+    from core.clauses import Clause, Item
+    clause = Clause(key="p", title="P", items=[Item("The payments are in the table.")], tables=[{"headers": ["No", "Condition"], "rows": [["1", "Within 10 days of signing"]]}], category="general")
+    sections = [Section("p", "P", "The payments are in the table.\nWithin 10 days of signing", clause)]
+    f = run(SeqClient(first(finding("p", quote="Within 10 days of signing", new_text="Within 10 days of signing and mobilisation")), second()), sections).findings[0]
+    assert f.fix_type == "none" and "table cell" in f.fix_note
+
+
+def test_the_model_is_not_shown_the_payment_table():
+    price = next(s for s in SECTIONS if s.key == "price_payment")
+    table = price.clause.tables[0]
+    assert table["rows"] and not any(cell in price.text for row in table["rows"] for cell in row if len(cell) > 25)
+    assert not any(" | ".join(table["headers"]) in s.text for s in SECTIONS)
 
 
 # ---------------------------------------------------------------- the second look
