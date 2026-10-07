@@ -1,5 +1,8 @@
 """Draft contract: one continuous workflow. Each step is a function; this page shows the current
 step under a header with back/next arrows. To add a step, write its render() and add it to STEPS."""
+import runpy
+from pathlib import Path
+
 import streamlit as st
 
 from ai.llm import call_summary
@@ -15,12 +18,11 @@ st.session_state[flow.COUNT_KEY] = len(STEPS)
 index = min(flow.current(), len(STEPS) - 1)
 step = STEPS[index]
 
-# One key input for the whole workflow (Phase 8 replaces it with the shared credentials module). It runs before the steps
-# so a step already sees the key typed in this run.
-with st.sidebar:
-    entered = st.text_input("OpenAI API key", type="password", value=st.session_state.get("openai_api_key", ""))
-    if entered:
-        st.session_state.openai_api_key = entered
+# One key input for the whole workflow: the shared credentials module from the course (api_key.py at the repo root, not edited).
+# It puts the key in st.session_state.openai_api_key when "Update API Key" is pressed, and it runs before the steps so a step
+# already sees the key in the same run. run_path runs the file on every rerun (an import would run it only the first time,
+# and the sidebar box would disappear on the next rerun).
+runpy.run_path(str(Path(__file__).resolve().parent.parent / "api_key.py"))
 
 # The header is created first so it sits on top, but filled after the step runs: the next arrow
 # then reflects what the user just typed instead of the previous run's state.

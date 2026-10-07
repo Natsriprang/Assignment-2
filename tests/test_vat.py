@@ -74,11 +74,9 @@ def test_fill_template_is_idempotent_and_leaves_drafted_clauses_alone():
     assert any(CLAUSE_PHRASE in i.text for c in lib if c.key == "drafted_1" for i in c.items)
 
 
-def test_the_notice_says_what_is_wrong_and_what_happens():
-    plain = vat_warning(TermSheet())
-    assert plain.startswith("VAT is not chosen.") and CLAUSE_PHRASE in plain and "term sheet says" not in plain
-    odd = vat_warning(TermSheet(vat_treatment="VAT 7%"))
-    assert "\u201cVAT 7%\u201d" in odd and "cannot be read" in odd
+def test_the_notice_says_vat_is_not_chosen_and_is_gone_once_it_is():
+    assert vat_warning(TermSheet()) == "VAT is not chosen."
+    assert vat_warning(TermSheet(vat_treatment="VAT 7%")) == "VAT is not chosen."      # unreadable text is the same short notice
     assert vat_warning(TermSheet(vat_treatment="exclusive")) is None and vat_warning(TermSheet(vat_treatment="Inclusive of VAT")) is None
 
 

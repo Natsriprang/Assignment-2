@@ -15,6 +15,8 @@ def insert_drafted(library, drafted):
     """Inserts each draft ({"key", "title", "sentences", "before"}) into `library` in place and returns it.
     `before` is the key of the clause it goes in front of, or "end". Drafts with the same target keep their order."""
     for d in drafted:
+        if not d["sentences"]:                  # every sentence cleared: the clause is left out of the contract (the page says so)
+            continue
         clause = make_clause(d["key"], d["title"], d["sentences"])
         keys = [c.key for c in library]
         target = d.get("before")
