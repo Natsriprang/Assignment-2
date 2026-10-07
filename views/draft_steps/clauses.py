@@ -10,6 +10,7 @@ from dataclasses import replace
 
 import streamlit as st
 
+from ai.chat_agent import ChatContext, answer_question, route_message
 from ai.drafting import draft_clause
 from ai.interpret import (InterpretationError, candidate_question, context_summary, forget_unknown_clauses, interpret_request,
                           result_lines, term_sheet_text)
@@ -33,6 +34,8 @@ REQUEST_SEQ_KEY = "new_clause_request_seq"   # last request id handed out; ids a
 REQUEST_NUMBERS_KEY = "request_numbers"   # [{"n", "kind", "key", "evidence"}]: the number of each request that is not a new clause
 REQUESTS_KEY = "new_clause_requests"  # [{"id": int, "text": str}] in the order the requests were first raised
 STEP_NAME = "interpret"
+ROUTER_STEP = "chat_router"          # the small call that sorts a typed message into a question or a change
+AGENT_STEP = "chat_agent"            # the calls of the agent that answers a question
 DECLINED_KEY = "draft_declined"       # [{"key": clause key, "evidence": the user's words}]: links the user answered No to
 UNDO_NOTE_KEY = "draft_undo_note"      # what the last Undo took out besides the change that was pressed (shown once)
 APPLIED_KEY = "draft_applied_log"     # [{"id", "entries": [...]}]: what each Apply wrote into the draft, kept for the whole session
@@ -142,6 +145,63 @@ def checked_problem(d, text, old=None):
 def default_tick(d):
     """Apply is ticked at the start only when there is wording and the checks have nothing to say."""
     return d.evidence_verified and applicable(d) and bool(d.new_text) and not d.rewrite_problem and not d.removes
+
+
+def last_assistant_text(chat):
+    """What the assistant said last, for the router: it tells a new request from the answer to a question."""
+    return next((m["content"] for m in reversed(chat) if m["role"] == "assistant"), "")
+
+
+def qa_history(chat):
+    """The earlier questions and answers of the chat, as the agent reads them (changes and their replies are not part of it)."""
+    return [{"role": m["role"], "content": m["content"]} for m in chat if m.get("qa")]
+
+
+def chat_context():
+    """What the agent's tools read: the draft as it stands, the term sheet and what has been applied."""
+    return ChatContext(draft_library_now(), clause_sandbox.current_term_sheet(), applied_entries_now())
+
+
+def show_agent_trace(agent):
+    """What the agent looked at for an answer, so that the answer can be checked against it."""
+    steps = agent.get("steps") or []
+    if steps:
+        with st.expander(f"What I looked at ({len(steps)})"):
+            for step in steps:
+                args = ", ".join(f"{k}: {v}" for k, v in step["args"].items())
+                st.caption(f"{plain(step['tool'])}({plain(args)}) \u2014 {plain(step['summary'])}")
+    else:
+        st.caption("I did not look anything up for this answer.")
+    if agent.get("cleaned"):
+        st.caption("A sentence that cited the law was left out.")
+
+
+def answer_if_question(client, calls, chat, text):
+    """For a message the user typed: the router decides whether it is a question. A question is answered by the agent and this returns True
+    (also when the agent failed: its error is shown and the message is taken back). A change returns False and goes the way it always did."""
+    with st.spinner("Thinking..."):
+        route = route_message(text, last_assistant_text(chat[:-1]), CountingClient(client, calls, ROUTER_STEP), MODEL)
+    if route != "question":
+        return False
+    error = None
+    with st.chat_message("assistant"):
+        with st.spinner("Looking it up in the draft and the term sheet..."):
+            try:
+                answer = answer_question(text, qa_history(chat[:-1]), chat_context(), CountingClient(client, calls, AGENT_STEP), MODEL)
+            except AIStepError as e:
+                error = str(e)
+            except Exception as e:
+                error = f"The API call failed: {e}"
+        if error:
+            chat.pop()
+            st.error(f"{error} Your message was not sent; please try again.")
+            return True
+    chat[-1]["qa"] = True
+    chat.append({"role": "assistant", "content": answer.text, "qa": True,
+                 "agent": {"steps": [{"tool": x.tool, "args": x.args, "summary": x.summary} for x in answer.steps], "calls": answer.calls,
+                           "cleaned": answer.cleaned}})
+    st.rerun()
+    return True
 
 
 def show_lines(lines):
@@ -912,7 +972,7 @@ def render():
         clause_sandbox.render_preview(STATE_KEY, noun="draft", download=False)
 
     st.subheader("Ask for changes")
-    last_idx = max((i for i, m in enumerate(chat) if m["role"] == "assistant"), default=None)
+    last_idx = max((i for i, m in enumerate(chat) if m["role"] == "assistant" and "result" in m), default=None)
     latest = chat[last_idx] if last_idx is not None else None
     stale = latest is not None and latest["snapshot"] != term_sheet_text(ts)
     if stale:
@@ -939,9 +999,13 @@ def render():
             else:
                 st.write("What would you like to change from the standard contract? For example: "
                          "\u201cclient wants to drop the construction timeline\u201d. I also check the term "
-                         "sheet itself, for example whether the roof owner is a different party from the Owner.")
+                         "sheet itself, for example whether the roof owner is a different party from the Owner. "
+                         "You can also ask me a question about the draft, for example \u201cwhat does the delay clause say?\u201d.")
                 skip = st.button(NO_REQUEST_BUTTON, disabled=client is None)
                 st.caption(NO_REQUEST_NOTE)
+    elif latest is None and not has_analysis() and not conditions:
+        skip = st.button(NO_REQUEST_BUTTON, disabled=client is None)          # only questions so far: the analysis has not run
+        st.caption(NO_REQUEST_NOTE)
 
     quick_reply = draft_request = None
     for i, msg in enumerate(chat):
@@ -955,6 +1019,8 @@ def render():
                     quick_reply, draft_request = render_results(latest, clauses, len(chat), stale, all_clauses)
             else:
                 show_lines(msg["content"].split("\n"))
+                if msg.get("agent") is not None:
+                    show_agent_trace(msg["agent"])
     if latest is None:
         quick_reply, draft_request = render_results(latest, clauses, len(chat), stale, all_clauses)
 
@@ -984,35 +1050,37 @@ def render():
 
     if client is None:
         st.info("Enter an OpenAI API key in the sidebar to start.")
-    prompt = st.chat_input("Describe a change, or answer a question above...", disabled=client is None)
+    prompt = st.chat_input("Describe a change, ask a question, or answer a question above...", disabled=client is None)
     text = (prompt or quick_reply or "").strip()
 
     if client is not None and (text or skip):
         if text:
             chat.append({"role": "user", "content": text})
             show_user_message(text)
-        with st.chat_message("assistant"):
-            with st.spinner("Reading the additional conditions..." if auto else "Thinking..."):
-                error = None
-                try:
-                    result = interpret_request(
-                        ts, interpret_library, CountingClient(client, calls, STEP_NAME), MODEL,
-                        ([{"role": "assistant", "content": "\n".join(applied_clause_notes())}] if applied_clause_notes() else [])
-                        + [{"role": m["role"], "content": content_for_model(m)} for m in chat],
-                        pending_deviations(chat[:-1] if text else chat), wording_state.applied(), applied_entries_now(),
-                        st.session_state.get(DECLINED_KEY, []))
-                except InterpretationError as e:
-                    error = str(e)
-                except Exception as e:
-                    error = f"The API call failed: {e}"
-            if error:
-                if text:
-                    chat.pop()
-                st.error(f"{error} Your message was not sent; please try again.")
-            else:
-                chat.append({"role": "assistant", "content": context_summary(result, list(all_clauses.values())),
-                             "result": result, "snapshot": term_sheet_text(ts)})
-                st.rerun()
+        asked = bool(text and prompt) and answer_if_question(client, calls, chat, text)
+        if not asked:
+            with st.chat_message("assistant"):
+                with st.spinner("Reading the additional conditions..." if auto else "Thinking..."):
+                    error = None
+                    try:
+                        result = interpret_request(
+                            ts, interpret_library, CountingClient(client, calls, STEP_NAME), MODEL,
+                            ([{"role": "assistant", "content": "\n".join(applied_clause_notes())}] if applied_clause_notes() else [])
+                            + [{"role": m["role"], "content": content_for_model(m)} for m in chat if not m.get("qa")],     # questions and answers are not requests
+                            pending_deviations(chat[:-1] if text else chat), wording_state.applied(), applied_entries_now(),
+                            st.session_state.get(DECLINED_KEY, []))
+                    except InterpretationError as e:
+                        error = str(e)
+                    except Exception as e:
+                        error = f"The API call failed: {e}"
+                if error:
+                    if text:
+                        chat.pop()
+                    st.error(f"{error} Your message was not sent; please try again.")
+                else:
+                    chat.append({"role": "assistant", "content": context_summary(result, list(all_clauses.values())),
+                                 "result": result, "snapshot": term_sheet_text(ts)})
+                    st.rerun()
 
     st.divider()
     if latest is not None and any(open_items(latest)):
