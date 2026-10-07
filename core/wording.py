@@ -376,6 +376,40 @@ def _write(clause, loc, text):
             clause.table_rows = [tuple(row) for row in clause.tables[0]["rows"]]
 
 
+# ---------------------------------------------------------------------------------------- two proposals for the same sentence
+def merge_rewrite(base, mine, theirs):
+    """A three-way merge of one sentence, word by word. `base` is the sentence a proposal was written against, `mine` the sentence as the draft
+    has it now (another proposal changed it), `theirs` the new wording of the proposal. The result is the sentence with both changes, or None
+    when the two changes touch the same words (or an insertion touches another change): it is never guessed. The same change made by both
+    counts once."""
+    b, m, t = norm(base).split(), norm(mine).split(), norm(theirs).split()
+    if not b:
+        return None
+    low = lambda words: [w.lower() for w in words]
+    if low(m) == low(b) or low(m) == low(t):
+        return " ".join(t)
+    if low(t) == low(b):
+        return " ".join(m)
+
+    def changes(other):
+        matcher = difflib.SequenceMatcher(None, low(b), low(other), autojunk=False)
+        return [(i1, i2, other[j1:j2]) for tag, i1, i2, j1, j2 in matcher.get_opcodes() if tag != "equal"]
+
+    mine_changes, their_changes = changes(m), changes(t)
+    their_changes = [c for c in their_changes if not any(c[:2] == x[:2] and low(c[2]) == low(x[2]) for x in mine_changes)]
+    for a1, a2, _ in mine_changes:
+        for b1, b2, _ in their_changes:
+            if a1 < b2 and b1 < a2:                                  # the same words
+                return None
+            if (a1 == a2 or b1 == b2) and a1 <= b2 and b1 <= a2:    # an insertion that touches the other change
+                return None
+    out, at = [], 0
+    for i1, i2, words in sorted(mine_changes + their_changes, key=lambda c: (c[0], c[1])):
+        out += b[at:i1] + list(words)
+        at = i2
+    return " ".join(out + b[at:])
+
+
 # ---------------------------------------------------------------------------------------- before and after for the page
 def _escape(word):
     return re.sub(r"([\\`*_\[\]#>|~$<])", r"\\\1", word)

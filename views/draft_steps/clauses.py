@@ -6,6 +6,8 @@ import difflib
 import hashlib
 import re
 
+from dataclasses import replace
+
 import streamlit as st
 
 from ai.drafting import draft_clause
@@ -76,10 +78,46 @@ def current_text(d):
     return wording.norm(wording_state.saved(deviation_key(d), default_text(d)))
 
 
+def draft_library_now():
+    return library_for(clause_sandbox.ensure_state(STATE_KEY), clause_sandbox.current_limits(), drafts.drafted_for_library(),
+                       clause_sandbox.current_term_sheet(), wording_state.applied())
+
+
+def sentence_now(d):
+    """The sentence a wording proposal is about, as the draft has it now: the same sentence, or (when another request has changed it since)
+    the one sentence that holds the words the proposal quotes. None when it is not there."""
+    clause = next((c for c in draft_library_now() if c.key == d.clause_key), None)
+    if clause is None or not d.old_text:
+        return None
+    wanted = wording.norm(d.old_text).lower()
+    for _, text in wording.units(clause):
+        if wording.norm(text).lower() == wanted:
+            return wording.norm(text)
+    found = wording.find_unit(clause, d.provision_quote) if d.provision_quote else None
+    return wording.norm(found[1]) if found else None
+
+
+def rebase(d, text):
+    """(sentence as the draft has it now, the new wording to write into it) for a proposal whose new wording is `text`. When another request
+    has changed the same sentence in other words, both changes are made; when they touch the same words, None."""
+    now = sentence_now(d)
+    if now is None:
+        return None
+    if now.lower() == wording.norm(d.old_text).lower():
+        return now, wording.norm(text)
+    merged = wording.merge_rewrite(d.old_text, now, text)
+    return (now, merged) if merged else None
+
+
 def start_wording_edit(d):
     """Edit opens the wording as one text; for a point that is being taken out it starts with that point (an empty text keeps it
-    taken out, a different text replaces it)."""
-    wording_state.start_edit(deviation_key(d), current_text(d) or (d.old_text if d.removes else ""))
+    taken out, a different text replaces it). It starts from the sentence as the draft has it now."""
+    text = current_text(d)
+    if d.change_type != "add" and text:
+        rebased = rebase(d, text)
+        if rebased:
+            text = rebased[1]
+    wording_state.start_edit(deviation_key(d), text or (d.old_text if d.removes else ""))
 
 
 def save_wording(key, widget):
@@ -90,13 +128,14 @@ def cancel_wording(key, widget):
     wording_state.cancel_edit(key, widget)
 
 
-def checked_problem(d, text):
-    """What the checks find wrong with `text` as the new wording; "" when nothing. Advice only: it never blocks."""
+def checked_problem(d, text, old=None):
+    """What the checks find wrong with `text` as the new wording; "" when nothing. Advice only: it never blocks. `old` is the sentence as the
+    draft has it now, when another request has changed it."""
     if d.removes and not text:
         return ""                                               # taking the whole point out needs no new wording
     if not text:
         return "There is no new wording yet."
-    old = d.old_text if d.change_type != "add" else ""
+    old = (d.old_text if old is None else old) if d.change_type != "add" else ""
     return wording.check_rewrite(old, text, d.change_type, d.provision_quote, f"{d.requested_change} {d.evidence}")
 
 
@@ -184,7 +223,7 @@ def action_number(a):
 
 
 def deviation_number(d):
-    return request_number("dev", f"{d.clause_key}|{d.change_type}|{normalize(d.old_text or d.provision_quote or d.evidence)}", d.evidence)
+    return request_number("dev", f"{d.clause_key}|{d.change_type}|{normalize(d.provision_quote or d.old_text or d.evidence)}", d.evidence)
 
 
 def request_id(text, evidence=""):
@@ -403,8 +442,9 @@ def apply_action(msg, a):
 
 
 def apply_deviation(msg, d):
-    """Apply button of a wording change: the wording as the user left it (saved) is written into the draft. When it cannot be written
-    the reason is shown in its box and nothing changes."""
+    """Apply button of a wording change: the wording as the user left it (saved) is written into the draft. When another request has changed
+    the same sentence since, both changes are made (see rebase); when they touch the same words, or the sentence is not there any more, the
+    reason is shown in the box and nothing changes."""
     key = deviation_key(d)
     notes = msg.setdefault("item_notes", {})
     title = titles_now().get(d.clause_key, d.clause_key)
@@ -413,18 +453,28 @@ def apply_deviation(msg, d):
     drafted_id = int(d.clause_key.split("_", 1)[1]) if d.clause_key.startswith("drafted_") else None
     saved_before = st.session_state.get(drafts.SAVED_STORE, {}).get(drafted_id) if drafted_id is not None else None
     saved_before = list(saved_before) if saved_before is not None else None
+    if d.change_type == "add":
+        old_now, text_now = d.old_text, text
+    elif removing:
+        old_now, text_now = sentence_now(d), ""
+    else:
+        rebased = rebase(d, text) if text else None
+        old_now, text_now = rebased if rebased else (None, text)
     if not applicable(d):
         notes[key] = "I could not tell which sentence it changes."
-    elif not removing and (not text or (d.change_type != "add" and text.lower() == wording.norm(d.old_text).lower())):
+    elif not removing and (not text_now or (d.change_type != "add" and old_now is not None and text_now.lower() == wording.norm(old_now).lower())):
         notes[key] = "The wording was not changed: press Edit to write the new wording, then Apply."
-    elif not write_wording_change(d, text, removing):
+    elif d.change_type != "add" and old_now is None:
+        notes[key] = ("That sentence is no longer in the clause, or another request changed the same words: this change cannot be added to it. "
+                      "Send the request again to get it for the sentence as it is now.")
+    elif not write_wording_change(replace(d, old_text=old_now), text_now, removing):
         notes[key] = "That sentence is no longer in the clause: it changed after another request was applied."
     else:
         notes.pop(key, None)
         entry = {"kind": "wording", "key": d.clause_key, "heading": f"{title}: {d.summary}", "requested_change": d.requested_change,
-                 "number": deviation_number(d), "evidence": d.evidence, "quote": d.provision_quote, "change_type": d.change_type, "old": d.old_text,
-                 "new": "" if removing else text, "removed": removing, "drafted_id": drafted_id, "saved_before": saved_before,
-                 "edit_id": None if drafted_id is not None else widget_key("edit", d.clause_key, "remove" if removing else d.change_type, d.old_text, text)}
+                 "number": deviation_number(d), "evidence": d.evidence, "quote": d.provision_quote, "change_type": d.change_type, "old": old_now,
+                 "new": "" if removing else text_now, "removed": removing, "drafted_id": drafted_id, "saved_before": saved_before,
+                 "edit_id": None if drafted_id is not None else widget_key("edit", d.clause_key, "remove" if removing else d.change_type, old_now, text_now)}
         log_applied([entry])
         msg.setdefault("applied_entries", []).append(entry)
         st.session_state[DEVIATIONS_KEY] = list(st.session_state.get(DEVIATIONS_KEY) or []) + [d]
@@ -571,6 +621,7 @@ def render_deviation(d, lookup, msg, stale=False):
     title = lookup[d.clause_key].title
     label = f"Wording change: {title}: {d.summary}"
     editing = applicable(d) and wording_state.is_editing(key)
+    conflict = False
     with st.container(border=True):
         st.markdown(f"#### Request {deviation_number(d)}: {plain(title)}: {plain(d.summary)}")
         if d.carried:
@@ -594,6 +645,13 @@ def render_deviation(d, lookup, msg, stale=False):
             c2.button("Cancel", on_click=cancel_wording, args=(key, ek), key=widget_key("cancel_wording", key))
         else:
             text = current_text(d)
+            old_show, new_show = d.old_text, text
+            if d.change_type != "add" and text and not d.removes:
+                rebased = rebase(d, text)
+                if rebased:
+                    old_show, new_show = rebased
+                else:
+                    conflict = True
             if d.change_type == "add":
                 st.caption("A new sentence at the end of this clause")
                 st.markdown(plain(text) if text else "_(nothing yet)_")
@@ -604,18 +662,21 @@ def render_deviation(d, lookup, msg, stale=False):
                 st.caption("New wording")
                 st.markdown("_Taken out of the clause._")
             else:
-                before, after = wording.diff_markup(d.old_text, text)
+                before, after = wording.diff_markup(old_show, new_show)
                 st.caption("Current wording")
                 st.markdown(before)
                 st.caption("New wording")
                 st.markdown(after)
+            if conflict:
+                st.warning("Another request changed this sentence in the same words, so this change cannot be added to it. "
+                           "Send the request again to get it for the sentence as it is now.")
             if d.written_by == "figure":
                 st.caption("The AI's wording could not be used, so the new figure was written into the sentence directly, "
                            "with its words made from the number.")
             elif d.written_by == "fragment":
                 st.caption("The AI rewrote only part of the sentence; the rest of it is kept exactly as it was.")
-            problem = checked_problem(d, text)
-            if problem:
+            problem = checked_problem(d, new_show, old_show)
+            if problem and not conflict:
                 st.warning(f"Check before you apply: {problem} You can still apply it, or press Edit to change the wording first.")
         st.caption(f"You wrote: \u201c{plain(d.evidence)}\u201d")
         if not d.evidence_verified:
@@ -625,7 +686,7 @@ def render_deviation(d, lookup, msg, stale=False):
             st.warning(note)
         if not editing:
             c0, c1, c2, _ = st.columns([1, 1, 1, 5])
-            c0.button("Apply", type="primary", on_click=apply_deviation, args=(msg, d), disabled=stale or not applicable(d),
+            c0.button("Apply", type="primary", on_click=apply_deviation, args=(msg, d), disabled=stale or not applicable(d) or conflict,
                       key=widget_key("apply_dev", key))
             c1.button("Edit", on_click=start_wording_edit, args=(d,), disabled=not applicable(d), key=widget_key("edit_wording", key))
             c2.button("Reject", on_click=reject_proposal, args=(msg, key, label, deviation_number(d)), key=widget_key("reject", key))

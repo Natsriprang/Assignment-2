@@ -5,6 +5,7 @@ It does not draft text or judge legal risk; later phases do that. Everything the
 validated in code before it is shown: unknown clause keys are rejected, no-ops and conflicts are
 removed, quoted evidence is checked against the real input, and every requested wording change must
 point at text that actually exists in the clause it names."""
+import dataclasses
 import difflib
 import json
 import re
@@ -820,7 +821,12 @@ def settle(result, library, pending=(), applied_edits=(), applied_entries=(), de
             if d.new_text and wording.norm(d.new_text).lower() in _unit_texts(clause):
                 continue
         elif not d.old_text or wording.norm(d.old_text).lower() not in _unit_texts(clause):
-            continue
+            # another request has changed the sentence since: the proposal is kept on the sentence as it is now, when both changes can be made
+            found = wording.find_unit(clause, d.provision_quote) if d.provision_quote else None
+            merged = wording.merge_rewrite(d.old_text, found[1], d.new_text) if found and d.old_text and d.new_text else None
+            if not merged:
+                continue
+            d = dataclasses.replace(d, old_text=wording.norm(found[1]), new_text=merged)
         asked = numbers_in(f"{d.requested_change} {d.evidence}")
         related = [u for u in result.unmapped_requests if u.candidate_key == d.clause_key]
         if any(figures(u) and asked and not (figures(u) <= asked or asked <= figures(u)) for u in related):

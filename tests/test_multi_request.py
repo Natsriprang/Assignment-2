@@ -158,6 +158,26 @@ def test_a_long_message_is_checked_even_when_it_comes_after_a_question():
     assert result.deviations == [], "more than a short answer: the words are checked"
 
 
+# ---------------------------------------------------------------- an open proposal follows the sentence another request changed
+def test_a_proposal_that_is_still_open_is_kept_on_the_sentence_as_another_request_left_it():
+    from ai.interpret import Deviation, settle
+    from core.wording import norm
+    no_cap = OLD.replace(" but not more than 5 (five) percent of the Contract Price", "")
+    open_one = Deviation("completion_deadline", "remove the cap", "remove the cap on delay damages", "remove limit", "remove_part", CAP, True, OLD, no_cap)
+    result = settle(interpret_request(TS, LIB, FakeClient(empty()), conversation=[{"role": "user", "content": "hello"}]), LIB, pending=[open_one])
+    assert len(result.deviations) == 1 and result.deviations[0].carried
+    kept = result.deviations[0]
+    assert norm(kept.old_text) == norm(NEW) and "0.5 (zero point five)" in kept.new_text and "but not more than" not in kept.new_text
+    assert open_one.old_text == OLD, "the proposal of the earlier reply is not changed: a copy is kept"
+
+
+def test_a_proposal_whose_words_were_changed_by_another_request_is_not_kept():
+    from ai.interpret import Deviation, settle
+    same_words = Deviation("completion_deadline", "rate", "make the rate 0.07%", "x", "modify", RATE, True, OLD, OLD.replace("0.05 (zero point zero five)", "0.07 (zero point zero seven)"))
+    result = settle(interpret_request(TS, LIB, FakeClient(empty()), conversation=[{"role": "user", "content": "hello"}]), LIB, pending=[same_words])
+    assert result.deviations == []
+
+
 if __name__ == "__main__":
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
     for name, fn in tests:
