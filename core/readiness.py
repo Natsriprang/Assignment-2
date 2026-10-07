@@ -1,6 +1,6 @@
-"""The facts about a draft that code can check before anything is asked of the AI: are the Parties named and identified, is the work
-described, is the price stated, are the signatories named. They come from the term sheet, which is what fills the draft. An element of a
-legal system's list (core.legal_systems) that depends on a fact that fails is not complete, and no AI is needed to say so. Pure code."""
+"""The facts about a draft that code can check without any AI: are the Parties named and identified, is the work described, is the price
+stated, are the signatories named. They come from the term sheet, which is what fills the draft. Pure code. The summary of the contract lists
+what is still missing before the draft is sent to the other Party."""
 from dataclasses import dataclass, field
 
 from core.signatures import names_of
@@ -36,11 +36,9 @@ def facts(ts):
     )}
 
 
-def failed_for(element, found):
-    """The plain names of what is missing from the term sheet for this element: [] when every fact it depends on holds."""
-    missing = []
-    for key in element.facts:
-        fact = found.get(key)
-        if fact is not None and not fact.ok:
-            missing += [m for m in fact.missing if m not in missing]
-    return missing
+def missing_before_sending(ts):
+    """The plain names of what the term sheet still lacks, each once, in the order of the facts."""
+    out = []
+    for fact in facts(ts).values():
+        out += [m for m in fact.missing if m not in out]
+    return out

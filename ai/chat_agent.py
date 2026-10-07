@@ -16,7 +16,6 @@ import re
 from dataclasses import dataclass, field
 
 from ai.llm import MODEL, AIStepError, chat_create, structured_call
-from ai.readiness import _CITES
 from ai.review import term_sheet_for_review
 from core import wording
 from core.clause_params import PARAMS, limits_of
@@ -29,6 +28,8 @@ MAX_RESULT_CHARS = 4000
 MAX_HITS = 8
 HISTORY_MESSAGES = 6             # earlier questions and answers the agent is shown, so that a follow-up makes sense
 ROUTES = ("question", "change")
+_CITES = re.compile(r"(?i)\b(?:section|sections|article|articles)\s+\d|\u0e21\u0e32\u0e15\u0e23\u0e32\s*\d|\bAct\s+(?:19|20)\d\d\b|Civil and Commercial Code|"
+                    r"Corporations Act|Australian Consumer Law|\u0e1b\.\u0e1e\.\u0e1e|\u0e1b\u0e23\u0e30\u0e21\u0e27\u0e25\u0e01\u0e0e\u0e2b\u0e21\u0e32\u0e22")   # a provision of law
 
 ROUTER_PROMPT = """You sort the messages a user types to the assistant of a contract-drafting app. The assistant helps the user change a \
 draft contract (a rooftop solar construction and installation agreement) and can also answer questions about it.
