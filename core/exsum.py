@@ -186,3 +186,17 @@ def change_line(removed, added):
     if removed and added:
         return f"\u201c{removed}\u201d \u2192 \u201c{added}\u201d"
     return f"taken out: \u201c{removed}\u201d" if removed else f"added: \u201c{added}\u201d"
+
+
+def _without_brackets(text):
+    return re.sub(r"\s*\([^)]*\)", "", text).strip()
+
+
+def plain_change(removed, added):
+    """A change in plain words that code can make without knowing what the words are about: the number words in brackets are left out and there
+    are no quotation marks or arrows ("0.05 (zero point zero five)" to "0.5 (zero point five)" gives "changed from 0.05 to 0.5"). Used when the AI
+    wrote no plain sentence for the change, or none that passed the checks."""
+    r, a = _without_brackets(removed), _without_brackets(added)
+    if r and a:
+        return f"changed from {r} to {a}"
+    return f"removed: {r}" if r else f"added: {a}"

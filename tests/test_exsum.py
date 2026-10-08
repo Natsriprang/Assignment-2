@@ -6,11 +6,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from ai.exsum import MAX_OVERVIEW_SENTENCES, OVERVIEW_PROMPT, build_schema, changes_block, overview_input, sources_figures, summarise_contract
+from ai.exsum import MAX_OVERVIEW_SENTENCES, MAX_PLAIN_LINES, OVERVIEW_PROMPT, build_schema, changes_block, overview_input, plain_changes, sources_figures, summarise_contract
 from ai.llm import AIStepError
 from ai.review import Section, sections_of
 from core.draft_state import library_for
-from core.exsum import allowed_figures, amount, change_line, digit_figures, draft_caps, fact_rows, facts_text, unsupported_figures, word_changes
+from core.exsum import (allowed_figures, amount, change_line, digit_figures, draft_caps, fact_rows, facts_text, plain_change, unsupported_figures,
+                        word_changes)
 from core.readiness import missing_before_sending
 from core.term_sheet_fields import TermSheet
 from tests.test_interpret import sample_term_sheet
@@ -27,8 +28,8 @@ CHANGES = {"completion_deadline": [{"kind": "wording_change", "before": RATE_BEF
 ROWS = facts_text(fact_rows(TS))
 
 
-def run(overview, changes=None, taken_out=(), sections=None, refuse=False):
-    client = SeqClient({"overview": overview}, refuse_at=0 if refuse else ())
+def run(overview, changes=None, taken_out=(), sections=None, refuse=False, plain=()):
+    client = SeqClient({"overview": overview, "changes": [{"clause_key": k, "text": t} for k, t in plain]}, refuse_at=0 if refuse else ())
     return summarise_contract(TS_TEXT, SECTIONS if sections is None else sections, ROWS, CHANGES if changes is None else changes, list(taken_out), client, "m"), client
 
 
@@ -146,6 +147,48 @@ def test_figures_are_read_as_digits_and_an_amount_with_commas_is_one_figure():
     assert unsupported_figures("THB 15,000,000 in 30 days", allowed) == [Decimal(15000000)]
 
 
+# ---------------------------------------------------------------- the changes in plain words
+def test_a_change_the_app_writes_itself_has_no_brackets_quotes_or_arrows():
+    lines = [plain_change(r, a) for r, a in word_changes(RATE_BEFORE, RATE_AFTER)]
+    assert lines == ["changed from 0.05 to 0.5", "removed: but not more than 5 percent of the Contract Price"]
+    assert plain_change("", "A new sentence.") == "added: A new sentence." and plain_change("An old sentence.", "") == "removed: An old sentence."
+    assert not any(ch in "".join(lines) for ch in "\u201c\u201d\u2192()")
+
+
+GOOD_PLAIN = [("completion_deadline", "Liquidated damages changed from 0.05% to 0.5% a day."), ("completion_deadline", "The cap on liquidated damages was removed.")]
+
+
+def test_the_plain_sentences_of_the_model_are_kept_for_the_clause_they_are_about():
+    result, client = run("Fine.", plain=GOOD_PLAIN)
+    assert result.plain_changes == {"completion_deadline": [t for _, t in GOOD_PLAIN]} and result.notes == []
+
+
+def test_a_plain_sentence_with_a_symbol_a_bracket_or_a_made_up_figure_is_left_out():
+    bad = [("completion_deadline", "Liquidated damages changed from \u201c0.05\u201d to \u201c0.5\u201d."), ("completion_deadline", "Rate is 0.5 (zero point five) percent."),
+           ("completion_deadline", "Damages rise 0.05% \u2192 0.5%."), ("completion_deadline", "The rate changed from 0.05% to 0.9%."),
+           ("completion_deadline", "Under section 12 of the Act the rate changed to 0.5%."), ("completion_deadline", "x" * 200)]
+    notes = []
+    assert plain_changes([{"clause_key": k, "text": t} for k, t in bad + [GOOD_PLAIN[0]]], CHANGES, ROWS, notes) == {"completion_deadline": [GOOD_PLAIN[0][1]]}
+    assert len(notes) == 6
+
+
+def test_a_plain_sentence_about_a_clause_that_was_not_changed_is_ignored():
+    assert plain_changes([{"clause_key": "notice", "text": "Notices changed."}, {"clause_key": "", "text": "x"}], CHANGES, ROWS, []) == {}
+
+
+def test_when_the_sentences_leave_out_the_new_figure_of_a_replaced_figure_the_app_writes_the_change_itself():
+    notes = []
+    got = plain_changes([{"clause_key": "completion_deadline", "text": "The cap on liquidated damages was removed."}], CHANGES, ROWS, notes)
+    assert got == {} and any("Wrote the changes of one clause itself" in n for n in notes)
+    assert plain_changes([{"clause_key": "completion_deadline", "text": "Liquidated damages now run at 0.5% a day."}], CHANGES, ROWS, []) != {}
+
+
+def test_at_most_a_few_plain_sentences_per_clause_and_the_figures_of_the_facts_are_allowed():
+    many = [{"clause_key": "completion_deadline", "text": f"Liquidated damages changed to 0.5% a day, version {word}."} for word in "abcdefgh"]
+    assert len(plain_changes(many, CHANGES, ROWS, [])["completion_deadline"]) == MAX_PLAIN_LINES
+    assert plain_changes([{"clause_key": "completion_deadline", "text": "Damages are 0.5% a day on a THB 10,000,000 price."}], CHANGES, ROWS, [])
+
+
 # ---------------------------------------------------------------- the one call
 def test_one_call_is_made_with_the_facts_the_clauses_the_changes_and_what_was_taken_out():
     result, client = run("The Owner pays THB 10,000,000.", taken_out=["Force Majeure"])
@@ -173,7 +216,7 @@ def test_the_model_reads_the_clauses_without_the_payment_table():
     sections = sections_of(library_for({}, None, None, TS))
     price = next(s for s in sections if s.key == "price_payment")
     assert not any(cell in price.text for row in price.clause.tables[0]["rows"] for cell in row if len(cell) > 25)
-    client = SeqClient({"overview": "Fine."})
+    client = SeqClient({"overview": "Fine.", "changes": []})
     summarise_contract("ts", sections, "facts", {}, [], client, "m")
     assert "[key: price_payment | title: Contract Price and Terms of Payment]" in client.calls[0]["messages"][1]["content"]
 
@@ -218,7 +261,8 @@ def test_the_prompt_says_what_to_leave_alone_and_to_say_a_change_from_what_to_wh
                    "Every clause that is not changed has the template's standard wording"):
         assert phrase in flat, phrase
     assert "\\" not in OVERVIEW_PROMPT
-    assert build_schema()["required"] == ["overview"]
+    assert build_schema()["required"] == ["overview", "changes"]
+    assert "CHANGES LIST" in OVERVIEW_PROMPT and "do not use quotation marks" in flat.replace("and do not use", "do not use") or "do not use quotation marks" in flat
 
 
 if __name__ == "__main__":

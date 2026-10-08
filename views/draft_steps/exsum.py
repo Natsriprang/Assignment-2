@@ -2,12 +2,13 @@
 changed from the template.
 
 Code writes everything that must be right, and shows it with no API key: the table of facts from the term sheet (parties, project, price, time,
-payment, caps as the draft has them, governing law, signatories), what the term sheet still lacks, and "Changes made to the contract": the clauses taken out of the
-standard contract and, for every sentence that was changed, the exact words that changed ("0.05 (zero point zero five)" to "0.5 (zero point
-five)") with the sentence before and after. The AI (one call, step "exsum_overview") writes only the overview above the changes: what the deal is,
-what matters in it and how it differs from the standard contract, leaving ordinary standard wording alone. It runs once by itself when the preview
-is first opened with an API key, and after that only when asked (the button is off while neither the term sheet nor the draft has changed).
-Advice only: it never blocks the download."""
+payment, the caps as the draft has them, governing law, signatories), what the term sheet still lacks, and "Changes made to the contract": the
+clauses taken out of the standard contract and, for every sentence that was changed, only what changed, in plain words ("changed from 0.05 to 0.5").
+The AI (one call, step "exsum_overview") writes the overview above the changes (what the deal is, what matters in it and how it differs from the
+standard contract, leaving ordinary standard wording alone) and, in the same call, one sentence in ordinary language for each change ("Liquidated
+damages changed from 0.05% to 0.5% a day"); code checks their figures and symbols, and writes the plain version itself for a change that has no
+sentence that passed. It runs once by itself when the preview is first opened with an API key, and after that only when asked (the button is off
+while neither the term sheet nor the draft has changed). Advice only: it never blocks the download."""
 import hashlib
 import json
 
@@ -16,8 +17,7 @@ import streamlit as st
 from ai.exsum import summarise_contract
 from ai.llm import MODEL, AIStepError, CountingClient, get_client
 from ai.review import sections_of, term_sheet_for_review
-from core import wording
-from core.exsum import change_line, fact_rows, facts_text, word_changes
+from core.exsum import fact_rows, facts_text, plain_change, word_changes
 from core.readiness import missing_before_sending
 from core.renumber import renumber_and_render
 from views import clause_sandbox
@@ -73,43 +73,29 @@ def run_summary(client):
     st.session_state[RESULT_KEY] = outcome
 
 
-def show_change(entry):
-    """One change, written by code: what the user asked, the words that changed, and the sentence before and after."""
-    kind, before, after, words = entry["kind"], entry["before"], entry["after"], entry["user_words"]
-    if words:
-        st.write(f"You asked: \u201c{plain(words)}\u201d")
+def change_lines(entry):
+    """The changes of one sentence as plain lines that the app writes itself."""
+    kind, before, after = entry["kind"], entry["before"], entry["after"]
     if kind == "new_clause":
-        st.write("A clause drafted for this contract.")
-        with st.expander("Show the clause"):
-            st.write(plain(after))
-    elif before and after:
-        for removed, added in word_changes(before, after):
-            st.write("\u2022 " + plain(change_line(removed, added)))
-        with st.expander("Show the sentence in the template and now"):
-            shown_before, shown_after = wording.diff_markup(before, after)
-            st.caption("In the template")
-            st.markdown(shown_before)
-            st.caption("Now")
-            st.markdown(shown_after)
-    elif after:
-        st.write("A sentence was added:")
-        st.write(plain(after))
-    else:
-        st.write("A sentence was taken out:")
-        st.write(plain(before))
+        return ["new clause"]
+    if before and after:
+        return [plain_change(removed, added) for removed, added in word_changes(before, after)]
+    return [plain_change("", after)] if after else [plain_change(before, "")]
 
 
-def show_changes(changes, taken_out, numbers, titles):
+def show_changes(changes, taken_out, numbers, titles, plain_by_clause=None):
+    """The list of changes: for each changed clause the AI's plain sentences when they passed the checks, otherwise the app's own plain version."""
     st.markdown("#### Changes made to the contract")
     if not changes and not taken_out:
-        st.write("Nothing was changed from the template's standard wording and no clause was taken out.")
+        st.write("No change from the standard contract.")
         return
     if taken_out:
-        st.write("Taken out of the standard contract: " + plain(", ".join(taken_out)) + ".")
+        st.write("Clauses taken out: " + plain(", ".join(taken_out)) + ".")
     for key in sorted(changes, key=lambda k: float(numbers.get(k, 0) or 0)):
         st.markdown(f"**{numbers.get(key, '')}. {plain(titles.get(key, key))}**")
-        for entry in changes[key]:
-            show_change(entry)
+        lines = (plain_by_clause or {}).get(key) or [line for entry in changes[key] for line in change_lines(entry)]
+        for line in lines:
+            st.write("\u2022 " + plain(line))
 
 
 def show():
@@ -154,7 +140,8 @@ def show():
                 with st.expander(f"{len(result.notes)} check(s) made on the overview"):
                     for note in result.notes:
                         st.caption(plain(note))
-    show_changes(changes, taken_out, numbers, titles)
+    ok = outcome is not None and "error" not in outcome
+    show_changes(changes, taken_out, numbers, titles, outcome["result"].plain_changes if ok else None)
     if client is not None:
         unchanged = outcome is not None and "error" not in outcome and outcome["snapshot"] == snap
         pressed = st.button("Write the overview again" if outcome is not None else "Write the overview", key="exsum_again", disabled=unchanged)
