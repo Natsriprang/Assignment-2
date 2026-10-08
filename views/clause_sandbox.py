@@ -188,6 +188,15 @@ def render_preview(state_key, noun="draft", download=True, header=False):
     if not download:
         return
     st.divider()
+    download_button(state_key, noun, header)
+
+
+def download_button(state_key, noun="draft", header=False):
+    """The Word download of the draft as it stands (with its header and signature block when `header`)."""
+    library = library_for(ensure_state(state_key), current_limits(), drafts.drafted_for_library(), current_term_sheet(),
+                          wording_state.applied())
+    header_lines = build_header(st.session_state.get("term_sheet"))
+    signature = build_signature_block(st.session_state.get("term_sheet")) if header else None
     buf = io.BytesIO()
     render_docx(library, buf, header=header_lines, signature=signature)
     buf.seek(0)
