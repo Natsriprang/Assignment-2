@@ -90,8 +90,7 @@ def show():
         if "error" in result:
             st.write(f"The risk check could not run: {plain(result['error'])}")
         elif result["findings"]:
-            st.write(f"{len(result['findings'])} point(s) to review in the changes you made to the standard template. "
-                       "Nothing was changed, and you can still download the draft.")
+            st.write(f"{len(result['findings'])} point(s) to review.")
             show_findings(result["findings"])
         else:
             st.write("No significant risks were found in the changes to the standard template.")

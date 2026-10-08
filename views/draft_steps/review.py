@@ -31,8 +31,8 @@ AUTO_KEY = "draft_review_auto"             # the draft the review was last start
 RUN_KEY = "draft_review_run"               # how many reviews were made: keeps the widgets of one review apart from the next
 STATUS_KEY = "draft_review_status"         # finding key -> {"state": "applied" | "rejected", "entry": {...}} for the current review
 NOTE_KEY = "draft_review_notes"            # finding key -> a sentence about why an Apply did not write anything
-FIRST_STEP = "review_term_sheet"            # the read that starts from the term sheet
-SECOND_STEP = "review_changes"             # the read that starts from the changed sentences
+FIRST_STEP = "review_by_matter"              # the read that goes through the final draft matter by matter
+SECOND_STEP = "review_by_changes"            # the read that starts from the changes
 
 
 def plain(text):
@@ -48,8 +48,8 @@ def current_library():
 
 def current_changes():
     """What this draft changed or added compared with the template, as the sentences themselves (a clause taken out has none)."""
-    return [{"id": it["id"], "kind": it["kind"], "clause": it["clause"], "text": it["after"], "user_words": it["user_words"]} for it in risks.current_items()
-            if it["kind"] in ("wording_change", "new_clause") and it["after"]]
+    return [{"id": it["id"], "kind": it["kind"], "clause": it["clause"], "before": it["before"], "after": it["after"], "text": it["after"],
+             "user_words": it["user_words"]} for it in risks.current_items() if it["kind"] in ("wording_change", "new_clause") and (it["before"] or it["after"])]
 
 
 def current_input():
@@ -61,7 +61,7 @@ def current_input():
 
 def snapshot():
     ts_text, sections, changes = current_input()
-    return hashlib.sha256(json.dumps([ts_text, [(s.key, s.text) for s in sections], [c["text"] for c in changes]], ensure_ascii=False).encode()).hexdigest()
+    return hashlib.sha256(json.dumps([[(s.key, s.text) for s in sections], [(c["before"], c["text"]) for c in changes]], ensure_ascii=False).encode()).hexdigest()
 
 
 # ---------------------------------------------------------------------------- running it
@@ -75,7 +75,7 @@ def run_review(client):
     snap = snapshot()
     result = {"snapshot": snap, "input_snapshot": snap, "run": run, "n_changes": len(changes)}
     calls = st.session_state.setdefault(flow.CALLS_KEY, [])
-    with st.spinner("Reviewing the changes against the term sheet..."):
+    with st.spinner("Reviewing the draft..."):
         try:
             found = review_draft(ts_text, sections, CountingClient(client, calls, FIRST_STEP), MODEL,
                                  second_client=CountingClient(client, calls, SECOND_STEP), changes=changes)
@@ -263,9 +263,7 @@ def show():
                 for f in result["findings"]:
                     show_finding(run, f)
             elif result["both_done"]:
-                n = result.get("n_changes", 0)
-                what = f"{n} changed sentence(s)" if n else "the draft"
-                st.write(f"Checked {what} against the term sheet" + (" and the rest of the draft" if n else "") + ": no conflict found.")
+                st.write("Checked the final draft for sentences that contradict each other: none found.")
     if client is not None:
         unchanged = result is not None and "error" not in result and result.get("input_snapshot") == snap
         pressed = st.button("Review again" if result is not None else "Review the draft", key="review_again", disabled=unchanged)

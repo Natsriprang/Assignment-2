@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import ai.llm as llm
 from ai.llm import AIStepError, chat_create
-from ai.review import (CHANGES_PROMPT, MAX_FINDINGS, READ_FROM_CHANGES, READ_FROM_TERM_SHEET, TERM_SHEET_PROMPT, Section, build_schema, changes_text,
+from ai.review import (CHANGES_PROMPT, MAX_FINDINGS, READ_FROM_CHANGES, READ_BY_MATTER, MATTER_PROMPT, Section, build_schema, changes_text,
                        dependency_findings, review_draft, sections_of, term_sheet_for_review)
 from core.clauses import Clause, Item
 from core.draft_state import library_for
@@ -39,8 +39,8 @@ class SeqClient:
 
 def finding(kind="term_sheet_mismatch", clause_key="completion_deadline", issue="The damages rate is not what the term sheet says.",
             why="Term sheet: 0.03% per day.", term_sheet_says="delay damages 0.03% per day", quote="0.05 (zero point zero five)",
-            other_clause_key="", other_quote="", fix_type="modify", new_text=LD_NEW):
-    return {"kind": kind, "clause_key": clause_key, "issue": issue, "why": why, "term_sheet_says": term_sheet_says, "quote": quote,
+            other_clause_key="", other_quote="", fix_type="modify", new_text=LD_NEW, change_id="c1"):
+    return {"kind": kind, "change_id": change_id, "clause_key": clause_key, "issue": issue, "why": why, "term_sheet_says": term_sheet_says, "quote": quote,
             "other_clause_key": other_clause_key, "other_quote": other_quote, "fix_type": fix_type, "new_text": new_text}
 
 
@@ -72,21 +72,23 @@ def test_the_two_reads_get_the_same_input_and_neither_sees_the_other_ones_answer
     client = SeqClient(first(finding()), first(finding()))
     run(client)
     users = [c["messages"][1]["content"] for c in client.calls]
-    assert users[0] == users[1] and "FINDINGS" not in users[0] and "0.05 (zero point zero five)" in users[0] and "TERM SHEET:" in users[0]
+    assert users[0] == users[1] and "FINDINGS" not in users[0] and "0.05 (zero point zero five)" in users[0]
+    assert users[0].startswith("CHANGES MADE TO THE TEMPLATE:") and "DRAFT:" in users[0]
+    assert "TERM SHEET" not in users[0] and "Payment due within" not in users[0], "the term sheet is not given to the reads"
 
 
 def test_the_two_reads_start_from_opposite_ends():
     client = SeqClient(first(), first())
     run(client)
-    assert [c["messages"][0]["content"] for c in client.calls] == [TERM_SHEET_PROMPT, CHANGES_PROMPT]
-    assert "start from the term sheet" in TERM_SHEET_PROMPT and "start from the draft" in CHANGES_PROMPT
-    assert "start from the draft" not in TERM_SHEET_PROMPT and "start from the term sheet" not in CHANGES_PROMPT
+    assert [c["messages"][0]["content"] for c in client.calls] == [MATTER_PROMPT, CHANGES_PROMPT]
+    assert "go through the draft matter by matter" in MATTER_PROMPT and "take each change in turn" in CHANGES_PROMPT
+    assert "take each change in turn" not in MATTER_PROMPT and "matter by matter" not in CHANGES_PROMPT
 
 
 def test_the_changed_sentences_are_listed_and_a_draft_with_no_change_says_so():
     client = SeqClient(first(), first())
     run(client)
-    assert "[c1 | a sentence changed or added | clause: Completion Deadline]" in client.calls[0]["messages"][1]["content"]
+    assert "CHANGES MADE TO THE TEMPLATE:\n[c1 | a sentence changed, added or taken out | clause: Completion Deadline]" in client.calls[0]["messages"][1]["content"]
     client = SeqClient(first(), first())
     run(client, changes=())
     assert "(none: the draft is the standard template)" in client.calls[0]["messages"][1]["content"]
@@ -102,7 +104,7 @@ def test_a_finding_both_reads_made_is_shown():
 
 def test_a_finding_only_one_read_made_is_listed_apart_with_the_read_that_made_it():
     result = pair(first(finding()), first())
-    assert result.findings == [] and [(f.issue, f.route) for f in result.single] == [("The damages rate is not what the term sheet says.", READ_FROM_TERM_SHEET)]
+    assert result.findings == [] and [(f.issue, f.route) for f in result.single] == [("The damages rate is not what the term sheet says.", READ_BY_MATTER)]
     result = pair(first(), first(finding()))
     assert result.findings == [] and [f.route for f in result.single] == [READ_FROM_CHANGES]
 
@@ -238,7 +240,7 @@ def test_with_changed_sentences_a_quote_must_be_inside_one_of_them():
     other = next(i.text for i in CLAUSE.items if i.text != LD_OLD)
     quote = " ".join(other.split()[:6])
     result = one(first(finding(quote=quote, fix_type="none", new_text="")))
-    assert result.findings == [] and any("not about a changed sentence" in n for n in result.notes)
+    assert result.findings == [] and any("not about the sentence of its change" in n for n in result.notes)
     assert len(one(first(finding(quote=quote, fix_type="none", new_text="")), changes=()).findings) == 1, "no changed sentence: the whole draft is checked"
 
 
@@ -318,12 +320,12 @@ def test_the_term_sheet_is_read_under_the_names_of_the_page_with_their_units():
 def test_a_change_the_user_asked_for_comes_with_the_users_words_and_the_prompt_says_what_to_do_with_it():
     block = changes_text([{"id": "i1", "kind": "wording_change", "clause": "Completion Deadline", "text": "The Owner has the right ...",
                            "user_words": "change delay damage to 0.5%"}])
-    assert "The user asked for this change: \u201cchange delay damage to 0.5%\u201d" in block
-    assert "The user asked for this change" not in changes_text(CHANGES), "no words, no line"
-    for prompt in (TERM_SHEET_PROMPT, CHANGES_PROMPT):
+    assert "- the user asked: \u201cchange delay damage to 0.5%\u201d" in block
+    assert "the user asked" not in changes_text(CHANGES), "no words, no line"
+    for prompt in (MATTER_PROMPT, CHANGES_PROMPT):
         flat = " ".join(prompt.split())
-        assert "may come with the words of the user who asked for the change" in flat and "do not report that difference" in flat
-        assert "or says more than the user asked for" in flat
+        assert "may come with the words of the user who asked for the change" in flat and "do not report the difference from the template" in flat
+        assert "do not report that something was taken out, lowered or raised because the user asked for it" in flat
 
 
 def test_a_claim_written_as_name_and_value_is_judged_by_its_value():
@@ -338,6 +340,87 @@ def test_a_claim_written_as_name_and_value_is_judged_by_its_value():
     changes = [{"id": "c1", "kind": "wording_change", "clause": "Miscellaneous", "text": "The Owner shall pay within 30 (thirty) working days."}]
     short["quote"] = "pay within 30 (thirty) working days"
     assert len(one(first(short), sections, "payment_days: 30\nproject_name: PV", changes).findings) == 1, "a value too short to judge is not used to drop a finding"
+
+
+# ---------------------------------------------------------------- the changes the model reads, and a finding that comes from one of them
+def test_the_model_reads_each_change_with_the_sentence_before_the_sentence_now_and_the_words_that_changed():
+    changes = [{"id": "i1", "kind": "wording_change", "clause": "Completion Deadline", "user_words": "increase the rate and drop the cap",
+                "before": "Damages at 0.05 (zero point zero five) percent a day but not more than 5 (five) percent of the Price.",
+                "after": "Damages at 0.5 (zero point five) percent a day."},
+               {"id": "i2", "kind": "wording_change", "clause": "Notice", "before": "", "after": "A new sentence."},
+               {"id": "i3", "kind": "wording_change", "clause": "Notice", "before": "An old sentence.", "after": ""},
+               {"id": "i4", "kind": "new_clause", "clause": "Warranty", "before": "", "after": "The Contractor warrants the system."}]
+    block = changes_text(changes)
+    assert "[i1 | a sentence changed, added or taken out | clause: Completion Deadline]\n- sentence in the template: Damages at 0.05" in block
+    assert "- sentence now: Damages at 0.5 (zero point five) percent a day." in block
+    assert "- changed: \u201c0.05 (zero point zero five)\u201d \u2192 \u201c0.5 (zero point five)\u201d" in block
+    assert "- changed: taken out: \u201cbut not more than 5 (five) percent of the Price\u201d" in block
+    assert "- the user asked: \u201cincrease the rate and drop the cap\u201d" in block
+    assert "- added: A new sentence." in block and "- taken out: An old sentence." in block and "- new clause: The Contractor warrants the system." in block
+
+
+def test_when_there_are_changes_a_finding_must_name_the_change_it_comes_from():
+    assert len(one(first(finding())).findings) == 1
+    for bad in (finding(change_id=""), finding(change_id="c9")):
+        result = one(first(bad))
+        assert result.findings == [] and any("not tied to a change" in n for n in result.notes)
+
+
+def test_without_changes_a_finding_needs_no_change():
+    assert len(one(first(finding(change_id="")), changes=()).findings) == 1
+
+
+def test_the_quote_must_be_inside_the_sentence_of_the_change_the_finding_names_not_just_any_changed_sentence():
+    other_text = next(i.text for i in CLAUSE.items if i.text != LD_OLD)
+    two = [{"id": "c1", "kind": "wording_change", "clause": "Completion Deadline", "text": LD_OLD}, {"id": "c2", "kind": "wording_change", "clause": "Completion Deadline", "text": other_text}]
+    quote = " ".join(other_text.split()[:6])
+    assert one(first(finding(quote=quote, fix_type="none", new_text="", change_id="c1")), changes=two).findings == []
+    assert len(one(first(finding(quote=quote, fix_type="none", new_text="", change_id="c2")), changes=two).findings) == 1
+
+
+def test_a_change_that_took_a_sentence_out_has_no_words_now_so_its_finding_may_quote_any_words_of_the_draft():
+    gone = [{"id": "c1", "kind": "wording_change", "clause": "Completion Deadline", "before": "A sentence that was taken out.", "after": ""}]
+    assert len(one(first(finding(quote="0.05 (zero point zero five)", fix_type="none", new_text="", change_id="c1")), changes=gone).findings) == 1
+
+
+def test_the_schema_lets_a_finding_name_only_the_changes_that_exist_and_the_prompts_say_to_report_only_what_the_changes_cause():
+    props = build_schema(["a"], ["c1", "c2"])["properties"]["findings"]["items"]
+    assert props["properties"]["change_id"]["enum"] == ["c1", "c2", ""] and "change_id" in props["required"]
+    assert build_schema(["a"])["properties"]["findings"]["items"]["properties"]["change_id"]["enum"] == [""]
+    for prompt in (MATTER_PROMPT, CHANGES_PROMPT):
+        flat = " ".join(prompt.split())
+        for phrase in ("Report only a contradiction that one of the CHANGES causes, and give the id of that change as change_id",
+                       "At least one of the two sentences must be the sentence of that change as it reads now",
+                       "what it said in the template, what it says now, the words that changed", "You are not given the term sheet: do not compare the draft with it",
+                       "Report only one kind of problem, a contradiction", "Do not report: anything about the term sheet"):
+            assert phrase in flat, phrase
+    assert "including a sentence that the change left behind and made wrong" in " ".join(CHANGES_PROMPT.split())
+    client = SeqClient(first(), first())
+    run(client)
+    assert [c["response_format"]["json_schema"]["schema"]["properties"]["findings"]["items"]["properties"]["change_id"]["enum"] for c in client.calls] == [["c1", ""], ["c1", ""]]
+
+
+# ---------------------------------------------------------------- a contradiction caused by a change, in the final draft
+def change_contradiction(change_id="c1", clause_key="completion_deadline", quote="at the rate of 0.05 (zero point zero five) percent", other_clause_key="completion_deadline",
+                  other_quote="not more than 5 (five) percent"):
+    return {"kind": "contradiction", "change_id": change_id, "clause_key": clause_key, "issue": "Two different things about the same matter.", "why": "x",
+            "quote": quote, "other_clause_key": other_clause_key, "other_quote": other_quote}
+
+
+def test_either_of_the_two_quotes_may_be_the_sentence_of_the_change():
+    other = next(i.text for i in CLAUSE.items if i.text != LD_OLD)
+    other_quote = " ".join(other.split()[:6])
+    mine = [{"id": "c1", "kind": "wording_change", "clause": "Completion Deadline", "text": LD_OLD}]
+    assert len(one(first(change_contradiction(quote="the Owner has the right to claim liquidated damages", other_clause_key="completion_deadline", other_quote=other_quote)), changes=mine).findings) == 1
+    assert len(one(first(change_contradiction(quote=other_quote, other_clause_key="completion_deadline", other_quote="the Owner has the right to claim liquidated damages")), changes=mine).findings) == 1, \
+        "the sentence of the change may be the second quote"
+    result = one(first(change_contradiction(quote=other_quote, other_quote=" ".join(other.split()[6:12]))), changes=mine)
+    assert result.findings == [] and any("not about the sentence of its change" in n for n in result.notes), "neither quote is the changed sentence"
+
+
+def test_a_contradiction_has_no_fix_and_a_finding_without_the_old_fields_still_validates():
+    result = one(first(change_contradiction()), changes=())
+    assert len(result.findings) == 1 and result.findings[0].fix_type == "none" and result.findings[0].term_sheet_says == ""
 
 
 # ---------------------------------------------------------------- when a call fails
@@ -381,10 +464,11 @@ def test_the_model_is_not_shown_the_payment_table():
     assert not any(" | ".join(table["headers"]) in s.text for s in SECTIONS)
 
 
-def test_the_schema_allows_the_sections_two_kinds_and_a_second_quote():
+def test_the_schema_allows_the_sections_a_contradiction_and_a_second_quote():
     props = build_schema(["a", "b"])["properties"]["findings"]["items"]["properties"]
     assert props["clause_key"]["enum"] == ["a", "b"] and props["other_clause_key"]["enum"] == ["a", "b", ""]
-    assert props["kind"]["enum"] == ["term_sheet_mismatch", "contradiction"]
+    assert props["kind"]["enum"] == ["contradiction"], "the reads are asked for contradictions only"
+    assert "term_sheet_says" not in props and "fix_type" not in props and "new_text" not in props
 
 
 # ---------------------------------------------------------------- the temperature of every call
