@@ -59,11 +59,12 @@ def show_findings(findings):
         with st.container(border=True):
             st.markdown(f"**{LABEL[f.severity]} \u00b7 {plain(f.clause)}**")
             st.write(plain(f.issue))
-            st.write(f"Risk to: {f.party}. Why: {plain(f.why)}")
+            st.write(f"**Risk to:** {plain(f.party)}")
+            st.write(f"**Why:** {plain(f.why)}")
             if f.suggestion:
-                st.write(f"Consider: {plain(f.suggestion)}")
+                st.write(f"**Consider:** {plain(f.suggestion)}")
             if f.quote_verified:
-                st.write(f"In the draft: \u201c{plain(f.quote)}\u201d")
+                st.write(f"**In the draft:** \u201c{plain(f.quote)}\u201d")
 
 
 def show():

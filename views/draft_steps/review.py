@@ -73,7 +73,7 @@ def run_review(client):
     st.session_state[STATUS_KEY] = {}
     st.session_state[NOTE_KEY] = {}
     snap = snapshot()
-    result = {"snapshot": snap, "input_snapshot": snap, "run": run}
+    result = {"snapshot": snap, "input_snapshot": snap, "run": run, "n_changes": len(changes)}
     calls = st.session_state.setdefault(flow.CALLS_KEY, [])
     with st.spinner("Reviewing the changes against the term sheet..."):
         try:
@@ -189,19 +189,17 @@ def show_finding(run, f):
     key = fkey(run, f)
     status = st.session_state.get(STATUS_KEY, {}).get(key)
     with st.container(border=True):
-        tag = "Checked by the app, no AI" if f.source == "app" else "Found by both reads"
-        st.markdown(f"**{plain(f.clause)}**  \u00b7  {tag}")
+        st.markdown(f"**{plain(f.clause)}**")
         st.write(plain(f.issue))
-        if f.why:
-            st.caption(f"Why: {plain(f.why)}")
         if f.term_sheet_says:
-            st.caption(f"The term sheet says: \u201c{plain(f.term_sheet_says)}\u201d")
+            st.write(f"**Term sheet:** \u201c{plain(f.term_sheet_says)}\u201d")
         if f.quote:
-            st.caption(f"In the draft ({plain(f.clause)}): \u201c{plain(f.quote)}\u201d" if f.source == "ai" else f"The sentence: \u201c{plain(f.quote)}\u201d")
+            st.write(f"**Draft:** \u201c{plain(f.quote)}\u201d")
         if f.other_quote:
-            st.caption(f"Also in the draft ({plain(f.other_clause)}): \u201c{plain(f.other_quote)}\u201d")
+            st.write(f"**Also in the draft ({plain(f.other_clause)}):** \u201c{plain(f.other_quote)}\u201d")
         if f.fix_type == "none":
-            st.caption(plain(f.fix_note) if f.fix_note else "No automatic fix. Change the draft in the Clauses step, or in the Word file after downloading.")
+            if f.source == "app":                       # what to do about a clause that refers to one that was taken out
+                st.write(plain(f.fix_note))
             return
         if status and status["state"] == "rejected":
             st.caption("Rejected.")
@@ -235,11 +233,9 @@ def show_finding(run, f):
 def show():
     """The review section of the preview."""
     st.subheader("Review of the draft")
-    st.caption("Checks that the changes made to the template agree with the term sheet and with the rest of the draft. "
-               "Risks to a party are in the section above.")
     app_findings = dependency_findings(current_library())
     if app_findings:
-        st.warning(f"{len(app_findings)} clause(s) still refer to a clause that was taken out. Nothing was changed.")
+        st.write(f"{len(app_findings)} clause(s) still refer to a clause that was taken out.")
         for f in app_findings:
             show_finding(0, f)
     client = get_client(st.session_state.get("openai_api_key"))
@@ -252,39 +248,29 @@ def show():
             run_review(client)
             result = st.session_state.get(RESULT_KEY)
     if result is None:
-        st.caption("The changes were not checked against the term sheet yet. Enter an API key to check them." if client is None
-                   else "The changes were not checked against the term sheet yet.")
+        st.write("Enter an API key to run the review." if client is None else "The review has not run yet.")
     else:
         if client is not None and result["snapshot"] != snap:
-            st.caption("The draft or the term sheet changed since the review was made. This is what that review found; press Review again to review it again.")
+            st.write("The draft changed since this review. Press Review again.")
         if "error" in result:
-            st.warning(f"The review could not run: {plain(result['error'])}")
+            st.write(f"The review could not run: {plain(result['error'])}")
         else:
-            checks = [n for n in result["notes"] if n.startswith(("Left out", "Dropped"))]
-            for note in [n for n in result["notes"] if n not in checks]:
-                st.caption(plain(note))
+            for note in [n for n in result["notes"] if not n.startswith(("Left out", "Dropped"))]:
+                st.write(plain(note))                  # a read that could not run: the user needs to know that nothing was confirmed
             run = result["run"]
             if result["findings"]:
-                st.warning(f"{len(result['findings'])} point(s) to review. Nothing was changed: a fix is written into the draft only when you press Apply, "
-                           "and you can still download the draft.")
+                st.write(f"{len(result['findings'])} point(s) to review.")
                 for f in result["findings"]:
                     show_finding(run, f)
             elif result["both_done"]:
-                st.caption("Both reads agree: no difference from the term sheet and no contradiction in the changes."
-                           if not result["single"] else "No finding was made by both reads.")
-            if checks:
-                with st.expander(f"{len(checks)} finding(s) left out by the checks"):
-                    for note in checks:
-                        st.caption(plain(note))
-            if result["single"]:
-                with st.expander(f"{len(result['single'])} finding(s) made by only one of the two reads (not shown as findings)"):
-                    for f in result["single"]:
-                        st.caption(f"{plain(f.clause)}: {plain(f.issue)} \u2014 \u201c{plain(f.quote)}\u201d (read: {f.route})")
+                n = result.get("n_changes", 0)
+                what = f"{n} changed sentence(s)" if n else "the draft"
+                st.write(f"Checked {what} against the term sheet" + (" and the rest of the draft" if n else "") + ": no conflict found.")
     if client is not None:
         unchanged = result is not None and "error" not in result and result.get("input_snapshot") == snap
         pressed = st.button("Review again" if result is not None else "Review the draft", key="review_again", disabled=unchanged)
         if unchanged:
-            st.caption("The term sheet and the draft have not changed since the last review.")
+            st.write("Nothing has changed since the last review.")
         if pressed:
             run_review(client)
             st.rerun()

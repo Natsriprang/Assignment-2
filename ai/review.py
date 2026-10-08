@@ -8,7 +8,7 @@ the words of the term sheet are in the term sheet, and the draft does not alread
 The two calls are two independent reads of the same input, from opposite ends, and neither sees the other's answer. Read 1 works from the
 term sheet (matter by matter, to the sentences of the draft that deal with it). Read 2 works from the draft (each changed sentence, to
 the term sheet and to the other sentences). Code keeps only the findings that both reads made: same kind, same clause, overlapping
-quotes. A finding that only one read made is not shown as a finding; it is listed apart, so that it is visible what was left out. Both
+quotes. A finding that only one read made is not shown as a finding; it is kept apart in the result (and not shown on the page). Both
 calls are made every time, even when nothing is found.
 
 A term_sheet_mismatch may carry a proposed fix (one sentence rewritten, or one sentence added at the end of a clause). The model is not
@@ -417,7 +417,7 @@ def review_draft(ts_text, sections, client, model=MODEL, second_client=None, cha
         raise errors[0]
     if errors:
         found = reads[0] if reads[0] is not None else reads[1]
-        result.notes.append(f"One of the two reads could not run ({errors[0]}), so nothing could be confirmed. What the other read found is listed apart.")
+        result.notes.append(f"One of the two reads could not run ({errors[0]}), so nothing could be confirmed.")
         result.single = sorted(found, key=lambda f: f.order)
         return result
     result.both_done = True
