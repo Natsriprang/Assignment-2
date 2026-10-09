@@ -146,6 +146,7 @@ def render_preview(state_key, noun="draft", download=True, header=False):
     header_lines = build_header(st.session_state.get("term_sheet"))
     rendered = renumber_and_render(library)
     signature = build_signature_block(st.session_state.get("term_sheet")) if header else None
+    st.subheader(f"Preview ({len(rendered)} clauses)")
     if header:
         show_blanks(header_lines, rendered, current_term_sheet(), signature)
         with st.container(border=True):
@@ -162,7 +163,6 @@ def render_preview(state_key, noun="draft", download=True, header=False):
                     aligned(f"{recital}. {text}", "justify")
                 else:
                     aligned(("\u2022 " if style == "bullet" else "") + text, "justify")
-    st.subheader(f"Preview ({len(rendered)} clauses)")
 
     flagged = cross_reference_scan(library)
     if flagged:

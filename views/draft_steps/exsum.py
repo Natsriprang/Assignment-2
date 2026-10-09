@@ -101,8 +101,6 @@ def show_changes(changes, taken_out, numbers, titles, plain_by_clause=None):
 def show():
     """The summary section of the preview."""
     st.subheader("Summary of the contract")
-    st.caption("What this contract says, for the person who approves it. The table and the changes are written by the app from the term sheet and the "
-               "draft; the overview is written by the AI, which leaves ordinary standard wording alone.")
     ts_text, sections, rows, changes, taken_out, numbers, titles = current()
     with st.container(border=True):
         if rows:
@@ -110,43 +108,44 @@ def show():
                 st.markdown(f"**{plain(label)}:** {plain(value)}")
         else:
             st.write("The term sheet has no values yet.")
-    missing = missing_before_sending(clause_sandbox.current_term_sheet())
-    if missing:
-        st.write("Still missing from the term sheet before the draft is sent: " + plain(", ".join(missing)) + ".")
+        st.divider()
+        missing = missing_before_sending(clause_sandbox.current_term_sheet())
+        if missing:
+            st.write("Still missing from the term sheet before the draft is sent: " + plain(", ".join(missing)) + ".")
 
-    client = get_client(st.session_state.get("openai_api_key"))
-    outcome = st.session_state.get(RESULT_KEY)
-    snap = None
-    if client is not None:
-        snap = snapshot()
-        if outcome is None and st.session_state.get(AUTO_KEY) != snap:
-            st.session_state[AUTO_KEY] = snap
-            run_summary(client)
-            outcome = st.session_state.get(RESULT_KEY)
-    if outcome is None:
-        st.write("The overview was not written yet. Enter an API key to write it." if client is None else "The overview was not written yet.")
-    else:
-        if client is not None and outcome["snapshot"] != snap:
-            st.write("The draft or the term sheet changed since this overview was written. This is the overview of the draft as it was; press Write the overview again.")
-        if "error" in outcome:
-            st.write(f"The overview could not be written: {plain(outcome['error'])}")
+        client = get_client(st.session_state.get("openai_api_key"))
+        outcome = st.session_state.get(RESULT_KEY)
+        snap = None
+        if client is not None:
+            snap = snapshot()
+            if outcome is None and st.session_state.get(AUTO_KEY) != snap:
+                st.session_state[AUTO_KEY] = snap
+                run_summary(client)
+                outcome = st.session_state.get(RESULT_KEY)
+        if outcome is None:
+            st.write("The overview was not written yet. Enter an API key to write it." if client is None else "The overview was not written yet.")
         else:
-            result = outcome["result"]
-            if result.overview:
-                st.write(plain(result.overview))
+            if client is not None and outcome["snapshot"] != snap:
+                st.write("The draft or the term sheet changed since this overview was written. This is the overview of the draft as it was; press Write the overview again.")
+            if "error" in outcome:
+                st.write(f"The overview could not be written: {plain(outcome['error'])}")
             else:
-                st.write("The AI wrote no overview that passed the checks.")
-            if result.notes:
-                with st.expander(f"{len(result.notes)} check(s) made on the overview"):
-                    for note in result.notes:
-                        st.caption(plain(note))
-    ok = outcome is not None and "error" not in outcome
-    show_changes(changes, taken_out, numbers, titles, outcome["result"].plain_changes if ok else None)
-    if client is not None:
-        unchanged = outcome is not None and "error" not in outcome and outcome["snapshot"] == snap
-        pressed = st.button("Write the overview again" if outcome is not None else "Write the overview", key="exsum_again", disabled=unchanged)
-        if unchanged:
-            st.caption("The term sheet and the draft have not changed since this overview was written.")
-        if pressed:
-            run_summary(client)
-            st.rerun()
+                result = outcome["result"]
+                if result.overview:
+                    st.write(plain(result.overview))
+                else:
+                    st.write("The AI wrote no overview that passed the checks.")
+                if result.notes:
+                    with st.expander(f"{len(result.notes)} check(s) made on the overview"):
+                        for note in result.notes:
+                            st.caption(plain(note))
+        ok = outcome is not None and "error" not in outcome
+        show_changes(changes, taken_out, numbers, titles, outcome["result"].plain_changes if ok else None)
+        if client is not None:
+            unchanged = outcome is not None and "error" not in outcome and outcome["snapshot"] == snap
+            pressed = st.button("Write the overview again" if outcome is not None else "Write the overview", key="exsum_again", disabled=unchanged)
+            if unchanged:
+                st.caption("The term sheet and the draft have not changed since this overview was written.")
+            if pressed:
+                run_summary(client)
+                st.rerun()
