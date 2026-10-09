@@ -141,7 +141,7 @@ def test_a_provision_the_user_confirmed_in_answer_to_a_question_is_not_checked()
 
 
 # ---------------------------------------------------------------- E: a clause is included only when its subject is named
-OWNER = "Owner\u2019s Representations and Warranties (Optional)"
+OWNER = "Owner\u2019s Representations and Warranties"
 
 
 def test_the_stems_of_singular_and_plural_agree():
@@ -175,8 +175,8 @@ def test_the_model_cannot_dress_an_include_as_the_term_sheets_to_get_round_the_c
 
 
 def test_the_users_yes_to_the_question_gives_the_suggestion_and_a_no_gives_nothing():
-    yes = "Yes, by \u201cadd a warranty clause\u201d I meant the 'Owner\u2019s Representations and Warranties (Optional)' clause."
-    no = "No, by \u201cadd a warranty clause\u201d I did not mean the 'Owner\u2019s Representations and Warranties (Optional)' clause."
+    yes = "Yes, by \u201cadd a warranty clause\u201d I meant the 'Owner\u2019s Representations and Warranties' clause."
+    no = "No, by \u201cadd a warranty clause\u201d I did not mean the 'Owner\u2019s Representations and Warranties' clause."
     got = validate(empty(clause_actions=[action("owner_representations", "include", yes)]), library_for({}), yes)
     assert got.clause_actions == [] and [s.clause_key for s in got.suggestions] == ["owner_representations"]
     result = validate(empty(clause_actions=[action("owner_representations", "include", no)]), library_for({}), no)

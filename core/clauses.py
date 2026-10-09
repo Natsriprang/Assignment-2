@@ -22,6 +22,7 @@ class Clause:
     optional: bool = False
     included: bool = True
     category: str = ""
+    parent: str = ""        # an optional clause that is written as a numbered item at the end of this other clause when it is ticked
     table_headers: list = field(default_factory=list)
     table_rows: list = field(default_factory=list)   # list of row-tuples, same length as table_headers
     authored_number: str = ""  # the clause number this Item text is actually phrased against;
@@ -36,6 +37,8 @@ def cross_reference_scan(clauses):
     reference to a DIFFERENT clause, which renumbering does not rewrite automatically."""
     flagged = []
     for clause in clauses:
+        if not clause.included:                         # a clause that is out of the draft is not in the contract
+            continue
         for item in clause.items:
             for text in [item.text] + item.lettered:
                 for m in REF_PATTERN.finditer(text):

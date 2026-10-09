@@ -70,6 +70,33 @@ def build_library():
                                      "system."),
            ]),
 
+        Clause("late_payment_interest", "Late-payment interest (an item of the clause on payment)",
+               items=[
+                   Item("In the event that the Owner fails to make the payment to the Contractor within the period "
+                        "stipulated in clause 3.3, the Owner shall pay interest at the rate of 0.05 (zero point zero "
+                        "five) percent per day of the unpaid amount until the Owner has made full payment of the "
+                        "outstanding amount."),
+               ], optional=True, included=False, category="payment", parent="price_payment"),
+
+        Clause("performance_security", "Performance Security",
+               items=[
+                   Item("The Contractor shall provide to the Owner, on or before the date of this Agreement, a "
+                        "performance security in the form of [*] in the amount of THB [*] ([*]), equivalent to [*] "
+                        "percent of the Contract Price, as security for the due performance of this Agreement."),
+                   Item("Where the Contractor provides a bank guarantee as the performance security, the bank "
+                        "guarantee shall be issued by a bank carrying on business in Thailand, and shall remain "
+                        "valid until the Contractor has been released from all of its obligations under this "
+                        "Agreement."),
+                   Item("If the performance security is reduced, becomes impaired or ceases to cover the "
+                        "liabilities of the Contractor for any reason, including where a delay in completion "
+                        "changes the completion date, the Contractor shall provide a replacement or additional "
+                        "security sufficient to restore the required amount within [*] ([*]) days from the date "
+                        "of receipt of written notice from the Owner."),
+                   Item("The performance security shall be returned to the Contractor, without interest, when "
+                        "the Contractor has been released from all of its obligations and liabilities under this "
+                        "Agreement."),
+               ], optional=True, included=False, category="security"),
+
         Clause("contractor_representations", "Contractor\u2019s Representations and Warranties", items=[
             Item("The Contractor warrants that in the performance of this Agreement, the "
                  "Contractor shall provide the appropriate and capable personnel in accordance "
@@ -92,7 +119,7 @@ def build_library():
                  "unreasonable annoyance to the Owner."),
         ], category="representations"),
 
-        Clause("owner_representations", "Owner\u2019s Representations and Warranties (Optional)",
+        Clause("owner_representations", "Owner\u2019s Representations and Warranties",
                items=[
                    Item("The Owner represents and warrants that it is the lawful owner of, or "
                         "otherwise holds valid rights of possession or use over, the land, "
@@ -126,6 +153,18 @@ def build_library():
                  "of the Director-General of the Revenue Department including the other laws "
                  "enforced in such period and in the future."),
         ], category="general"),
+
+        Clause("guarantee", "Guarantee",
+               items=[
+                   Item("The Contractor agrees to guarantee against any defects of the rooftop on which the System "
+                        "is installed, as the foundation of the System. The guarantee includes the performance of "
+                        "the System installed in accordance with this Agreement, which shall be guaranteed for 2 "
+                        "(two) years from the date on which the Owner accepts the completed Works. If any defect of "
+                        "the rooftop or malfunction of the System occurs during the guarantee period, the "
+                        "Contractor shall repair the defect or malfunction within 7 (seven) days."),
+                   Item("The Contractor agrees to clean and maintain the installed solar panels [*] times per "
+                        "year, for a period of [*] years."),
+               ], optional=True, included=False, category="warranty"),
 
         Clause("completion_deadline", "Completion Deadline", items=[
             Item("The Owner agrees that the Contractor shall commence the Works under this "
@@ -292,6 +331,24 @@ def build_library():
                  "of the Contract Price⟧, within 15 (fifteen) days of the "
                  "Owner\u2019s written notice to the Contractor."),
         ], category="termination"),
+
+        Clause("owner_termination_rights", "Owner\u2019s Rights Following Termination",
+               items=[
+                   Item("Upon the Owner exercising its right to terminate this Agreement, the Owner may perform "
+                        "the Works itself or engage a third party to continue and complete the Works. The Owner "
+                        "shall have the following rights:",
+                        lettered=[
+                            "(a) the Owner or any person engaged to continue the Works may use the construction "
+                            "tools and equipment, temporary works and construction materials that the Owner "
+                            "considers necessary to be retained for completion of the Works;",
+                            "(b) the Owner may recover from the Contractor the reasonable costs of engaging a "
+                            "replacement contractor and the costs of materials and equipment required to complete "
+                            "the Works; and",
+                            "(c) the Owner may withhold or deduct from the amounts of the Contract Price that are "
+                            "due or will become due, the reasonable and documented costs and damages arising from "
+                            "the completion of the Works.",
+                        ]),
+               ], optional=True, included=False, category="termination"),
 
         Clause("force_majeure", "Force Majeure", items=[
             Item("Subject to the limitations set forth in this Agreement, in the event that a "
