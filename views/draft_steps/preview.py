@@ -40,3 +40,4 @@ def render():
         clause_sandbox.render_preview(clauses.STATE_KEY, noun="draft", download=False, header=True)
     st.divider()
     clause_sandbox.download_button(clauses.STATE_KEY, noun="draft", header=True)
+    clause_sandbox.memo_download_button(clauses.STATE_KEY)

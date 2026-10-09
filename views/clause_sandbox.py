@@ -17,6 +17,8 @@ from core.fill import fill_warnings
 from core.header import build_header
 from core.signatures import build_signature_block
 from core.vat import vat_warning
+from core.memo import build_memo
+from core.memo_render import render_memo_docx
 from core.render import render_docx
 from core.renumber import renumber_and_render
 from views.draft_steps import drafts, wording_state
@@ -206,4 +208,20 @@ def download_button(state_key, noun="draft", header=False):
         file_name=f"contract_{noun}.docx",
         mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         key=f"{state_key}_download",
+    )
+
+
+def memo_download_button(state_key):
+    """The Word download of the internal approval memo that goes with the draft (core.memo); it is not part of the contract."""
+    library = library_for(ensure_state(state_key), current_limits(), drafts.drafted_for_library(), current_term_sheet(),
+                          wording_state.applied())
+    buf = io.BytesIO()
+    render_memo_docx(build_memo(st.session_state.get("term_sheet"), library), buf)
+    buf.seek(0)
+    st.download_button(
+        "Download approval memo as Word file",
+        buf.getvalue(),
+        file_name="approval_memo.docx",
+        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        key=f"{state_key}_memo_download",
     )
