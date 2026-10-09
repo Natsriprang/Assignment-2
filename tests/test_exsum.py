@@ -265,6 +265,76 @@ def test_the_prompt_says_what_to_leave_alone_and_to_say_a_change_from_what_to_wh
     assert "CHANGES LIST" in OVERVIEW_PROMPT and "do not use quotation marks" in flat.replace("and do not use", "do not use") or "do not use quotation marks" in flat
 
 
+# ---------------------------------------------------------------------------------------- the other facts, read from the draft
+def filled_draft(mode="calendar"):
+    from core.clause_params import limits_of
+    from core.draft_state import library_for
+    ts = sample_term_sheet()
+    ts.contract_price_words, ts.vat_treatment, ts.deadline_mode, ts.completion_days = "Ten Million Baht", "exclusive", mode, "200"
+    return ts, library_for({}, limits_of(ts), {}, ts, {})
+
+
+def edit(library, key, old, new):
+    clause = next(c for c in library if c.key == key)
+    for item in clause.items:
+        if old in item.text:
+            item.text = item.text.replace(old, new)
+            return
+    raise AssertionError(old)
+
+
+def row(ts, library, label):
+    return dict(fact_rows(ts, library)).get(label)
+
+
+def test_an_unchanged_draft_gives_the_same_facts_as_the_term_sheet():
+    for mode in ("calendar", "period"):
+        ts, lib = filled_draft(mode)
+        for label in ("Contract price", "Payment") + (("Time for the Works",) if mode == "period" else ()):     # the draft writes dates in full
+            assert row(ts, lib, label) == row(ts, None, label), (mode, label, row(ts, lib, label), row(ts, None, label))
+
+
+def test_the_price_is_read_from_the_draft_and_a_change_is_said():
+    ts, lib = filled_draft()
+    edit(lib, "price_payment", "THB 10,000,000", "THB 9,500,000")
+    said = row(ts, lib, "Contract price")
+    assert said.startswith("THB 9,500,000 (Ten Million Baht), exclusive of VAT") and "the term sheet says THB 10,000,000" in said
+
+
+def test_the_days_to_pay_are_read_from_the_draft():
+    ts, lib = filled_draft()
+    edit(lib, "price_payment", "within 30 (thirty) working days", "within 45 (forty-five) working days")
+    said = row(ts, lib, "Payment")
+    assert "within 45 (the term sheet says 30; the draft was changed) working days" in said and "3 installments (30%, 30%, 40%)" in said
+
+
+def test_the_days_for_the_works_are_read_from_the_draft():
+    ts, lib = filled_draft("period")
+    edit(lib, "completion_deadline", "within 200 days", "within 240 days")
+    assert row(ts, lib, "Time for the Works") == "240 days (the term sheet says 200 days; the draft was changed)"
+
+
+def test_the_dates_for_the_works_are_read_from_the_draft():
+    ts, lib = filled_draft("calendar")
+    edit(lib, "completion_deadline", "on or before 1 April 2027", "on or before 1 June 2027")
+    assert row(ts, lib, "Time for the Works") == "1 November 2026 to 1 June 2027"
+
+
+def test_a_clause_taken_out_of_the_draft_is_said_in_its_rows():
+    ts, lib = filled_draft()
+    next(c for c in lib if c.key == "completion_deadline").included = False
+    assert row(ts, lib, "Time for the Works") == "not in the draft: the clause was taken out"
+    next(c for c in lib if c.key == "price_payment").included = False
+    assert row(ts, lib, "Contract price") == "not in the draft: the clause was taken out"
+    assert "each due within" not in (row(ts, lib, "Payment") or "")
+
+
+def test_a_sentence_that_cannot_be_read_keeps_the_term_sheet_row():
+    ts, lib = filled_draft()
+    edit(lib, "price_payment", "the fixed total amount of THB 10,000,000", "a lump sum to be agreed")
+    assert row(ts, lib, "Contract price") == row(ts, None, "Contract price")
+
+
 if __name__ == "__main__":
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
     for name, fn in tests:

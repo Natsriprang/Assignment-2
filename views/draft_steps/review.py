@@ -2,24 +2,21 @@
 
 - The app checks by itself, without AI, which clauses still refer to a clause that was taken out (core.dependencies). This is always
   shown, with no API key and no button.
-- The AI reads the term sheet and the sentences this draft changed or added compared with the template, with the whole draft for
-  reading, in two independent reads (one starts from the term sheet, the other from the changed sentences) and keeps only what both reads found. It reports a sentence that says something different
-  from the term sheet, or two sentences that say different things about the same matter, each with its evidence quoted. A difference from
-  the term sheet may come with a proposed fix: one sentence rewritten, or one added. Each fix has Apply, Edit and Reject like the requests
-  in the Clauses step, and only Apply writes anything into the draft.
+- The AI reads the final draft, with the sentences this draft changed or added marked, in two independent reads (one goes through the draft
+  matter by matter, the other starts from the changed sentences), and keeps only what both reads found: a changed sentence that contradicts
+  another sentence of the draft, each with the two sentences quoted. It does not read the term sheet (the term sheet is checked in its own
+  step) and it proposes no fix: to change the draft, the user goes back to the Clauses step.
 
 The AI part runs once by itself when the preview is first opened with an API key, and after that only when asked (Review again, which is
 off while neither the term sheet nor the draft has changed since the last review), so it never spends a call without the user knowing.
 The result is shown as it was when it was made. Nothing here blocks the download."""
 import hashlib
 import json
-from types import SimpleNamespace
 
 import streamlit as st
 
 from ai.llm import MODEL, AIStepError, CountingClient, get_client
 from ai.review import dependency_findings, review_draft, sections_of, term_sheet_for_review
-from core import wording
 from core.draft_state import library_for
 from core.header import build_header
 from core.signatures import build_signature_block, signature_texts
@@ -28,9 +25,7 @@ from views.draft_steps import clauses, drafts, flow, risks, wording_state
 
 RESULT_KEY = "draft_review"                # {"snapshot", "input_snapshot", "run", "findings", "single", "notes", "both_done"} or {..., "error"}
 AUTO_KEY = "draft_review_auto"             # the draft the review was last started on by itself
-RUN_KEY = "draft_review_run"               # how many reviews were made: keeps the widgets of one review apart from the next
-STATUS_KEY = "draft_review_status"         # finding key -> {"state": "applied" | "rejected", "entry": {...}} for the current review
-NOTE_KEY = "draft_review_notes"            # finding key -> a sentence about why an Apply did not write anything
+RUN_KEY = "draft_review_run"               # how many reviews were made
 FIRST_STEP = "review_by_matter"              # the read that goes through the final draft matter by matter
 SECOND_STEP = "review_by_changes"            # the read that starts from the changes
 
@@ -70,8 +65,6 @@ def run_review(client):
     ts_text, sections, changes = current_input()
     run = st.session_state.get(RUN_KEY, 0) + 1
     st.session_state[RUN_KEY] = run
-    st.session_state[STATUS_KEY] = {}
-    st.session_state[NOTE_KEY] = {}
     snap = snapshot()
     result = {"snapshot": snap, "input_snapshot": snap, "run": run, "n_changes": len(changes)}
     calls = st.session_state.setdefault(flow.CALLS_KEY, [])
@@ -90,104 +83,9 @@ def fkey(run, f):
     return f"{run}_{f.id}"
 
 
-def text_key(run, f):
-    return clauses.widget_key("review_text", fkey(run, f))
-
-
-def current_text(run, f):
-    """The new wording as it stands: what the user saved with Edit, else the AI's."""
-    return wording.norm(wording_state.saved(fkey(run, f), f.new_text))
-
-
-def problem_with(f, text):
-    if not text:
-        return "There is no new wording yet."
-    problem = wording.check_rewrite(f.old_text if f.fix_type == "modify" else "", text, f.fix_type, f.quote, term_sheet_for_review(clause_sandbox.current_term_sheet()))
-    return "" if problem in ("The new wording does not contain the figure you asked for.",) else problem
-
-
-def _refresh_snapshot(result):
-    """What the user did through a finding is not 'the draft changed since the review': the review keeps its place."""
-    result["snapshot"] = snapshot()
-
-
-def apply_fix(run, f):
-    """Apply button: the wording as the user left it is written into the draft the way the Clauses step writes a wording change."""
-    key = fkey(run, f)
-    notes = st.session_state.setdefault(NOTE_KEY, {})
-    text = current_text(run, f)
-    if f.fix_type == "modify" and text.lower() == wording.norm(f.old_text).lower():
-        notes[key] = "The wording was not changed: press Edit to write the new wording, then Apply."
-        return
-    if not text:
-        notes[key] = "There is no new wording yet: press Edit to write it, then Apply."
-        return
-    drafted_id = int(f.clause_key.split("_", 1)[1]) if f.clause_key.startswith("drafted_") else None
-    saved_before = st.session_state.get(drafts.SAVED_STORE, {}).get(drafted_id) if drafted_id is not None else None
-    saved_before = list(saved_before) if saved_before is not None else None
-    d = SimpleNamespace(clause_key=f.clause_key, change_type=f.fix_type, old_text=f.old_text, summary=f.issue[:80])
-    if not clauses.write_wording_change(d, text):
-        notes[key] = "That clause is no longer in the draft."
-        return
-    edit_id = None if drafted_id is not None else clauses.widget_key("edit", f.clause_key, f.fix_type, f.old_text, text)
-    entry = {"kind": "wording", "edit_id": edit_id, "drafted_id": drafted_id, "saved_before": saved_before}
-    if edit_id is not None and edit_id in clauses.failed_edit_ids():          # the sentence is not there any more
-        clauses.revert_entry(entry)
-        notes[key] = "That sentence is no longer in the clause: it changed after the review was made."
-        return
-    notes.pop(key, None)
-    st.session_state.setdefault(STATUS_KEY, {})[key] = {"state": "applied", "entry": entry, "text": text}
-    _refresh_snapshot(st.session_state.get(RESULT_KEY, {}))
-
-
-def undo_fix(run, f):
-    key = fkey(run, f)
-    status = st.session_state.get(STATUS_KEY, {}).pop(key, None)
-    if status and status["state"] == "applied":
-        clauses.revert_entry(status["entry"])
-        _refresh_snapshot(st.session_state.get(RESULT_KEY, {}))
-
-
-def reject_fix(run, f):
-    st.session_state.setdefault(STATUS_KEY, {})[fkey(run, f)] = {"state": "rejected"}
-
-
-def start_edit(run, f):
-    wording_state.start_edit(fkey(run, f), current_text(run, f) or f.old_text)
-
-
-def save_edit(run, f):
-    wording_state.save_edit(fkey(run, f), text_key(run, f), wording.norm)
-
-
-def cancel_edit(run, f):
-    wording_state.cancel_edit(fkey(run, f), text_key(run, f))
-
-
-def show_fix(run, f, status):
-    key = fkey(run, f)
-    text = status["text"] if status and status["state"] == "applied" else current_text(run, f)
-    if f.fix_type == "add":
-        st.caption("A new sentence at the end of this clause")
-        st.markdown(plain(text) if text else "_(nothing yet)_")
-    else:
-        before, after = wording.diff_markup(f.old_text, text)
-        st.caption("Current wording")
-        st.markdown(before)
-        st.caption("Proposed wording")
-        st.markdown(after)
-    if not status:
-        problem = problem_with(f, text)
-        if problem:
-            st.warning(f"Check before you apply: {problem} You can still apply it, or press Edit to change the wording first.")
-    note = st.session_state.get(NOTE_KEY, {}).get(key)
-    if note:
-        st.warning(note)
-
-
 def show_finding(run, f):
-    key = fkey(run, f)
-    status = st.session_state.get(STATUS_KEY, {}).get(key)
+    """One point to review: what is wrong, with the quotes that show it. A contradiction has no fix to apply; the user changes the draft in the
+    Clauses step. A clause that refers to one that was taken out says what to do about it."""
     with st.container(border=True):
         st.markdown(f"**{plain(f.clause)}**")
         st.write(plain(f.issue))
@@ -197,36 +95,8 @@ def show_finding(run, f):
             st.write(f"**Draft:** \u201c{plain(f.quote)}\u201d")
         if f.other_quote:
             st.write(f"**Also in the draft ({plain(f.other_clause)}):** \u201c{plain(f.other_quote)}\u201d")
-        if f.fix_type == "none":
-            if f.source == "app":                       # what to do about a clause that refers to one that was taken out
-                st.write(plain(f.fix_note))
-            return
-        if status and status["state"] == "rejected":
-            st.caption("Rejected.")
-            st.button("Undo", on_click=undo_fix, args=(run, f), key=clauses.widget_key("review_undo_reject", key))
-            return
-        editing = not status and wording_state.is_editing(key)
-        if editing:
-            st.caption("Edit the wording. The contract changes only with what you save and then apply: press Save to keep your changes.")
-            tk = text_key(run, f)
-            if tk not in st.session_state:
-                st.session_state[tk] = wording_state.working(key, current_text(run, f))
-            lines = st.session_state[tk].splitlines() or [""]
-            height = min(500, max(120, 30 * sum(len(line) // 90 + 1 for line in lines) + 40))
-            wording_state.set_working(key, st.text_area("New wording", key=tk, height=height))
-            c1, c2, _ = st.columns([1, 1, 8])
-            c1.button("Save", type="primary", on_click=save_edit, args=(run, f), key=clauses.widget_key("review_save", key))
-            c2.button("Cancel", on_click=cancel_edit, args=(run, f), key=clauses.widget_key("review_cancel", key))
-            return
-        show_fix(run, f, status)
-        if status and status["state"] == "applied":
-            st.success("Applied to the draft.")
-            st.button("Undo", on_click=undo_fix, args=(run, f), key=clauses.widget_key("review_undo", key))
-            return
-        c0, c1, c2, _ = st.columns([1, 1, 1, 5])
-        c0.button("Apply", type="primary", on_click=apply_fix, args=(run, f), key=clauses.widget_key("review_apply", key))
-        c1.button("Edit", on_click=start_edit, args=(run, f), key=clauses.widget_key("review_edit", key))
-        c2.button("Reject", on_click=reject_fix, args=(run, f), key=clauses.widget_key("review_reject", key))
+        if f.source == "app":                           # what to do about a clause that refers to one that was taken out
+            st.write(plain(f.fix_note))
 
 
 # ---------------------------------------------------------------------------- the section

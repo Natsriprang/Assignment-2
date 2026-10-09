@@ -36,6 +36,7 @@ def amount(text):
     return f"{value:,.2f}" if "." in raw and value != value.to_integral_value() else f"{int(value):,}"
 
 
+MARKER_BLANK = "[*]"
 CAP_NAMES = {"ld_cap": "Cap on delay damages", "damages_cap": "Cap on total damages deducted"}
 
 
@@ -89,6 +90,86 @@ def draft_caps(library, ts):
     return rows
 
 
+# ---------------------------------------------------------------------------------------- the facts as the draft says them
+def _draft_sentences(library, key):
+    """The sentences of the clause `key` as it stands in the draft; None when the clause is not in the draft."""
+    clause = next((c for c in library if c.key == key), None)
+    return _sentences_of(clause) if clause is not None and clause.included else None
+
+
+def _first(sentences, pattern):
+    for sentence in sentences:
+        m = re.search(pattern, sentence, re.IGNORECASE)
+        if m:
+            return m
+    return None
+
+
+def _same_amount(a, b):
+    try:
+        return Decimal(str(a).replace(",", "")) == Decimal(str(b).replace(",", ""))
+    except InvalidOperation:
+        return False
+
+
+def draft_price(library, ts):
+    """The Contract Price row as the draft's clause on price says it (the amount, its words and whether VAT is included), or None when the
+    sentence cannot be read. Where the amount differs from the term sheet the row says so."""
+    sentences = _draft_sentences(library, "price_payment")
+    if sentences is None:
+        return ("Contract price", "not in the draft: the clause was taken out")
+    m = _first(sentences, r"fixed total amount of THB\s+(\d[\d,]*(?:\.\d+)?)(?:\s*\(([^)]*)\))?(?:,\s*(inclusive|exclusive) of VAT)?")
+    if not m:
+        return None
+    words = f" ({m.group(2)})" if m.group(2) and m.group(2) != MARKER_BLANK else ""
+    said = _join(f"THB {amount(m.group(1))}{words}", f"{m.group(3).lower()} of VAT" if m.group(3) else "")
+    typed = _text(ts, "contract_price_number")
+    if typed and not _same_amount(m.group(1), typed):
+        said += f" (the term sheet says THB {amount(typed)}; the draft was changed)"
+    return ("Contract price", said)
+
+
+def draft_payment_days(library):
+    """The working days the Owner has to pay, as the draft says them: a number, None when it cannot be read, "removed" when the clause is out."""
+    sentences = _draft_sentences(library, "price_payment")
+    if sentences is None:
+        return "removed"
+    m = _first(sentences, r"within\s+(\d+)\s*(?:\([^)]*\)\s*)?working days")
+    return m.group(1) if m else None
+
+
+def draft_installments(library):
+    """The percentages in the draft's payment table, in order; a row that is still blank is left out."""
+    clause = next((c for c in library if c.key == "price_payment"), None)
+    if clause is None or not clause.included:
+        return []
+    out = []
+    for table in clause.tables:
+        for row in table["rows"]:
+            if len(row) > 1 and re.fullmatch(r"\d+(?:\.\d+)?%", str(row[1]).strip()):
+                out.append(str(row[1]).strip())
+    return out
+
+
+def draft_time(library, ts):
+    """The Time for the Works row as the draft's clause on the deadline says it, or None when the sentence cannot be read."""
+    sentences = _draft_sentences(library, "completion_deadline")
+    if sentences is None:
+        return ("Time for the Works", "not in the draft: the clause was taken out")
+    m = _first(sentences, r"within\s+(\d+)\s+days from the signing date")
+    if m:
+        said = f"{m.group(1)} days"
+        typed = _text(ts, "completion_days")
+        if _text(ts, "deadline_mode") == "period" and typed.isdigit() and typed != m.group(1):
+            said += f" (the term sheet says {typed} days; the draft was changed)"
+        return ("Time for the Works", said)
+    m = _first(sentences, r"commence the Works[^.]*?on or before\s+(.+?)\s+and the Contractor agrees to complete the Works on or before\s+(.+?)\.?$")
+    if m and "[*]" not in m.group(0):
+        return ("Time for the Works", f"{m.group(1)} to {m.group(2)}")
+    return None
+
+
+
 def fact_rows(ts, library=None):
     """[(label, value)] for what the term sheet says about the deal, in the order a reader looks for it. A row with no value is left out. The
     caps on damages are read from the draft when `library` (the clauses as they stand) is given."""
@@ -104,20 +185,36 @@ def fact_rows(ts, library=None):
     capacity = _join(t("capacity"), t("capacity_unit"), sep=" ") if t("capacity") else ""        # a unit alone says nothing
     if project or capacity:
         rows.append(("Project", _join(project, f"capacity {capacity}" if capacity else "")))
+    mode = t("deadline_mode")
+    price_row = None
     if t("contract_price_number"):
         words = f" ({t('contract_price_words')})" if t("contract_price_words") else ""
         vat = {"exclusive": "exclusive of VAT", "inclusive": "inclusive of VAT"}.get(vat_choice(ts), t("vat_treatment"))
-        rows.append(("Contract price", _join(f"THB {amount(t('contract_price_number'))}{words}", vat)))
-    mode = t("deadline_mode")
+        price_row = ("Contract price", _join(f"THB {amount(t('contract_price_number'))}{words}", vat))
+    time_row = None
     if mode == "period" and t("completion_days"):
-        rows.append(("Time for the Works", f"{t('completion_days')} days"))
+        time_row = ("Time for the Works", f"{t('completion_days')} days")
     elif t("start_date") or t("completion_date"):
-        rows.append(("Time for the Works", f"{t('start_date') or '?'} to {t('completion_date') or '?'}"))
-    installments = [i for i in getattr(ts, "installments", []) or [] if str(getattr(i, "percent", "")).strip()]
+        time_row = ("Time for the Works", f"{t('start_date') or '?'} to {t('completion_date') or '?'}")
+    installments = [f"{str(i.percent).strip()}%" for i in getattr(ts, "installments", []) or [] if str(getattr(i, "percent", "")).strip()]
+    days = t("payment_days")
+    if library is not None:                                  # what the draft says, which a change to its wording may have moved
+        price_row = (price_row and draft_price(library, ts)) or price_row
+        time_row = (time_row and draft_time(library, ts)) or time_row
+        if installments:
+            installments = draft_installments(library) or installments
+        said_days = draft_payment_days(library)
+        if said_days == "removed":
+            days = ""
+        elif said_days:
+            days = said_days if days.isdigit() and said_days == days else (f"{said_days} (the term sheet says {days}; the draft was changed)" if days else said_days)
+    if price_row:
+        rows.append(price_row)
+    if time_row:
+        rows.append(time_row)
     if installments:                                                                          # the number of days alone is only a default
-        share = ", ".join(f"{str(i.percent).strip()}%" for i in installments)
-        rows.append(("Payment", _join(f"{len(installments)} installments ({share})" if installments else "",
-                                      f"each due within {t('payment_days')} working days" if t("payment_days") else "")))
+        rows.append(("Payment", _join(f"{len(installments)} installments ({', '.join(installments)})",
+                                      f"each due within {days} working days" if days else "")))
     if library is None:
         rows.append(("Caps on damages", limits_text(limits_of(ts))))
     else:
