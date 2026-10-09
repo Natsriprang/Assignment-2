@@ -1,5 +1,5 @@
 """Step 3: the draft as it stands, in two tabs: "Contract" (the summary of the contract and the numbered preview) and "Checks" (the risks of the
-changes and the review of the draft). The Word download is below the tabs, whichever is open.
+changes and the review of the draft). The risks and the review are each in a box. The Word download is below the tabs, whichever is open.
 
 The Checks run first in the code so that the line at the top of the Contract tab, which says how many points they found, has this run's results; the
 tabs are drawn in their own order. The AI checks run by themselves as before, whichever tab is open."""
@@ -30,8 +30,10 @@ def render():
     st.caption("The draft as it stands: the clauses chosen in the previous step, renumbered.")
     contract_tab, checks_tab = st.tabs(["Contract", "Checks"])
     with checks_tab:                      # first, so that the line on the Contract tab has this run's results
-        risks.show()
-        review.show()
+        with st.container(border=True):
+            risks.show()
+        with st.container(border=True):
+            review.show()
     with contract_tab:
         line = checks_status(st.session_state.get(risks.RESULT_KEY), st.session_state.get(review.RESULT_KEY), len(dependency_findings(review.current_library())))
         if line:

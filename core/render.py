@@ -3,7 +3,14 @@ from docx import Document
 from docx.shared import Pt, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
+from core.emphasis import segments
 from core.renumber import renumber_and_render
+
+
+def _add_text(paragraph, text, names=(), bold=False):
+    """Write `text` into the paragraph; defined terms in quotation marks and `names` are in bold."""
+    for piece, strong in segments(text, names):
+        paragraph.add_run(piece).bold = bold or strong or None
 
 
 def _add_table(doc, table_data):
@@ -22,16 +29,18 @@ def _add_table(doc, table_data):
 def _add_signature_block(doc, block):
     """The closing sentence, then one borderless two-column table: a column per party, a paragraph per line."""
     doc.add_paragraph()
-    doc.add_paragraph(block["closing"]).alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+    para = doc.add_paragraph()
+    para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+    _add_text(para, block["closing"])
     table = doc.add_table(rows=1, cols=len(block["parties"]))
     for cell, party in zip(table.rows[0].cells, block["parties"]):
         for n, line in enumerate(party["lines"]):
             p = cell.paragraphs[0] if n == 0 else cell.add_paragraph()
             run = p.add_run(line)
-            run.bold = n == 0                                  # the role is the heading of the column
+            run.bold = n < 2                                    # the role is the heading of the column, and the company's name is in bold
 
 
-def render_docx(clauses, out_path, header=None, signature=None):
+def render_docx(clauses, out_path, header=None, signature=None, bold_names=()):
     """`header` is a list of (style, text) lines from core.header.build_header; without it only the title is written.
     `signature` is a block from core.signatures.build_signature_block, written after the last clause."""
     rendered = renumber_and_render(clauses)
@@ -60,10 +69,12 @@ def render_docx(clauses, out_path, header=None, signature=None):
             text = "\u2022 " + text
         if style == "indent":
             p.paragraph_format.left_indent = Cm(1.0)
-        run = p.add_run(text)
         if style == "title":
+            run = p.add_run(text)
             run.bold = True
             run.font.size = Pt(14)
+        else:
+            _add_text(p, text, bold_names if style == "bullet" else ())
     doc.add_paragraph()
 
     for number, clause, item_lines in rendered:
@@ -72,7 +83,9 @@ def render_docx(clauses, out_path, header=None, signature=None):
         r.bold = True
 
         for n, p in enumerate(clause.plain_paragraphs):
-            doc.add_paragraph(p).alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+            para = doc.add_paragraph()
+            para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+            _add_text(para, p)
             if n == 0 and not item_lines:                      # a clause without numbered items: its table follows its first paragraph
                 for table_data in clause.tables:
                     _add_table(doc, table_data)
@@ -82,10 +95,10 @@ def render_docx(clauses, out_path, header=None, signature=None):
             p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
             if line.startswith("    "):
                 p.paragraph_format.left_indent = Cm(1.0)
-                p.add_run(line.strip())
+                _add_text(p, line.strip())
             else:
                 p.paragraph_format.left_indent = Cm(0.5)
-                p.add_run(line)
+                _add_text(p, line)
             if i == 0 and clause.tables:
                 for table_data in clause.tables:
                     _add_table(doc, table_data)

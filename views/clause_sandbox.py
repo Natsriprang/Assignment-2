@@ -14,6 +14,7 @@ from core.clause_params import limits_of
 from core.draft_state import library_for
 from core.blanks import find_blanks
 from core.fill import fill_warnings
+from core.emphasis import party_names, segments
 from core.header import build_header
 from core.signatures import build_signature_block
 from core.vat import vat_warning
@@ -29,9 +30,11 @@ def plain(text):
     return re.sub(r"([\\`*_\[\]#>|~$<])", r"\\\1", text)
 
 
-def aligned(text, align, bold=False):
-    """A paragraph with its alignment ("center", "right" or "justify"); the text is escaped as HTML, so a placeholder like [*] is shown as typed."""
-    st.markdown(f"<div style='text-align:{align}'>{'<b>' if bold else ''}{html.escape(text)}{'</b>' if bold else ''}</div>", unsafe_allow_html=True)
+def aligned(text, align, bold=False, names=()):
+    """A paragraph with its alignment ("center", "right" or "justify"). The text is escaped as HTML, so a placeholder like [*] is shown as typed;
+    defined terms in quotation marks and `names` are in bold."""
+    body = "".join(f"<b>{html.escape(piece)}</b>" if strong or bold else html.escape(piece) for piece, strong in segments(text, names))
+    st.markdown(f"<div style='text-align:{align}'>{body}</div>", unsafe_allow_html=True)
 
 
 def current_limits():
@@ -72,7 +75,7 @@ def show_signature_block(block):
         st.write(plain(block["closing"]))
         for column, party in zip(st.columns(len(block["parties"])), block["parties"]):
             with column:
-                st.markdown("  \n".join(plain(line) if line else "\u00a0" for line in party["lines"]))
+                st.markdown("  \n".join((f"**{plain(line)}**" if n < 2 else plain(line)) if line else "\u00a0" for n, line in enumerate(party["lines"])))
 
 
 def show_blanks(header_lines, rendered, ts, signature=None):
@@ -151,6 +154,7 @@ def render_preview(state_key, noun="draft", download=True, header=False):
         show_blanks(header_lines, rendered, current_term_sheet(), signature)
         with st.container(border=True):
             recital = 0
+            names = party_names(current_term_sheet())
             for style, text in header_lines:
                 if style == "title":
                     aligned(text, "center", bold=True)
@@ -162,7 +166,7 @@ def render_preview(state_key, noun="draft", download=True, header=False):
                     recital += 1
                     aligned(f"{recital}. {text}", "justify")
                 else:
-                    aligned(("\u2022 " if style == "bullet" else "") + text, "justify")
+                    aligned(("\u2022 " if style == "bullet" else "") + text, "justify", names=names if style == "bullet" else ())
 
     flagged = cross_reference_scan(library)
     if flagged:
@@ -211,7 +215,7 @@ def download_button(state_key, noun="draft", header=False):
     header_lines = build_header(st.session_state.get("term_sheet"))
     signature = build_signature_block(st.session_state.get("term_sheet")) if header else None
     buf = io.BytesIO()
-    render_docx(library, buf, header=header_lines, signature=signature)
+    render_docx(library, buf, header=header_lines, signature=signature, bold_names=party_names(st.session_state.get("term_sheet")))
     buf.seek(0)
     st.download_button(
         f"Download {noun} as Word file",

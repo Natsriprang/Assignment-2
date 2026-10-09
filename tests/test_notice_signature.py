@@ -151,7 +151,7 @@ def test_the_word_file_ends_with_the_signature_block():
     assert [p.text for p in owner.paragraphs] == ["OWNER", "Solar Owner Co., Ltd.", "", SIGNATURE_LINE, "Nat Sriprang", "Authorised signatory",
                                                   "", SIGNATURE_LINE, "Ploy Wong", "Witness"]
     assert [p.text for p in contractor.paragraphs][-2:] == ["Mali Chan", "Witness"], "the witnesses come last in the column"
-    assert owner.paragraphs[0].runs[0].bold and not owner.paragraphs[1].runs[0].bold
+    assert owner.paragraphs[0].runs[0].bold and owner.paragraphs[1].runs[0].bold and not owner.paragraphs[3].runs[0].bold
     order = list(d.element.body.iterchildren())
     closing = next(pp for pp in d.paragraphs if pp.text == CLOSING)
     last_clause = next(pp for pp in d.paragraphs if "governed by and interpreted in accordance with the laws of Thailand" in pp.text)
