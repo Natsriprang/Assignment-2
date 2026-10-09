@@ -17,6 +17,7 @@ RESULT_KEY = "risk_check"                # {"snapshot", "findings", "notes"} or 
 AUTO_KEY = "risk_check_auto"             # the changes the check was last started on by itself
 STEP_NAME = "risk_flagging"
 LABEL = {"high": "High", "medium": "Medium", "low": "Low"}
+COLOUR = {"high": "220, 38, 38", "medium": "249, 115, 22", "low": "234, 179, 8"}      # red, orange, yellow (RGB, used with some transparency)
 
 
 def plain(text):
@@ -54,9 +55,17 @@ def run_check(items, client):
     st.session_state[RESULT_KEY] = result
 
 
+def colour_css():
+    """The style of the risk boxes: a tinted background and a coloured edge by severity, light enough to read in a light or a dark theme."""
+    rules = "".join(f"[class*='st-key-risk_box_{sev}_'] {{ background-color: rgba({rgb}, 0.14); border: 1px solid rgba({rgb}, 0.65); border-radius: 0.5rem; "
+                    f"padding: 0.75rem 1rem; }}\n" for sev, rgb in COLOUR.items())
+    return f"<style>{rules}</style>"
+
+
 def show_findings(findings):
-    for f in findings:
-        with st.container(border=True):
+    st.markdown(colour_css(), unsafe_allow_html=True)
+    for n, f in enumerate(findings):
+        with st.container(key=f"risk_box_{f.severity}_{n}"):
             st.markdown(f"**{LABEL[f.severity]} \u00b7 {plain(f.clause)}**")
             st.write(plain(f.issue))
             st.write(f"**Risk to:** {plain(f.party)}")
