@@ -407,7 +407,7 @@ def render_draft(entry_id, drafted, clauses, msg, text):
     if drafted.notes:
         with st.expander("Points to decide or check"):
             show_lines(f"- {n}" for n in drafted.notes)
-    titles = {c.key: c.title for c in clauses.values() if c.included}
+    titles = {c.key: c.title for c in clauses.values() if c.in_contract}
     options = list(titles) + ["end"]
     pk = drafts.placement_key(entry_id)
     if st.session_state.get(pk) not in options:        # the widget was dropped when the user left this step, or its clause was unticked
@@ -1033,7 +1033,7 @@ def render():
                     refs = get_references()
                     selection = select_references(request_text, refs,
                                                   CountingClient(client, calls, "select_references"), MODEL)
-                    order = [(c.key, c.title) for c in clauses.values() if c.included]
+                    order = [(c.key, c.title) for c in clauses.values() if c.in_contract]
                     hint = placement_from_references([refs[i] for i in selection.ids()],
                                                      [(c.key, c.title, c.included) for c in clauses.values()])
                     drafted = draft_clause(request_text, selection, refs,

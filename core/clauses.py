@@ -29,6 +29,13 @@ class Clause:
     # fixed once in build_library() and never recomputed from the current included/order state.
 
 
+def _in_contract(self):
+    """True when the clause is a clause of its own in the contract: ticked, and not one that is written as items of another clause."""
+    return bool(self.included and not self.parent)
+
+
+Clause.in_contract = property(_in_contract)
+
 REF_PATTERN = re.compile(r"clause (\d+[A-Za-z]?)(?:\.(\d+))?", re.IGNORECASE)
 
 
@@ -37,7 +44,7 @@ def cross_reference_scan(clauses):
     reference to a DIFFERENT clause, which renumbering does not rewrite automatically."""
     flagged = []
     for clause in clauses:
-        if not clause.included:                         # a clause that is out of the draft is not in the contract
+        if not clause.in_contract:                      # a clause that is out of the draft is not in the contract (its items, if it is merged, are in its parent)
             continue
         for item in clause.items:
             for text in [item.text] + item.lettered:

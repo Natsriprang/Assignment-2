@@ -39,7 +39,9 @@ def test_default_draft_text_and_numbers_are_the_same_as_before():
 def test_late_payment_interest_is_the_last_item_of_the_payment_clause_and_not_a_clause_of_its_own():
     rendered = numbered({"late_payment_interest": True})
     keys = [c.key for _, c, _ in rendered]
-    assert "late_payment_interest" not in keys and len(keys) == 15
+    assert "late_payment_interest" not in keys and len(keys) == 15                    # not a clause of its own
+    library = library_for({"late_payment_interest": True}, None, None, sample_term_sheet(), {})
+    assert next(c for c in library if c.key == "late_payment_interest").included         # but still ticked, so that the picker keeps showing it
     price = next(items for _, c, items in rendered if c.key == "price_payment")
     assert price[-1].startswith("3.6 In the event that the Owner fails to make the payment") and "0.05 (zero point zero five) percent per day" in price[-1]
 
@@ -50,7 +52,7 @@ def test_the_interest_item_points_at_the_days_to_pay_and_follows_a_renumbering()
     assert number == "2" and "clause 2.3," in items[-1] and "clause 3.3" not in items[-1]
 
 
-def test_the_interest_item_is_dropped_when_the_payment_clause_is_out():
+def test_the_interest_item_is_not_in_the_contract_when_the_payment_clause_is_out():
     keys = [c.key for _, c, _ in numbered({"late_payment_interest": True, "price_payment": False})]
     assert "price_payment" not in keys and "late_payment_interest" not in keys
 

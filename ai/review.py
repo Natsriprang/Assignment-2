@@ -154,7 +154,7 @@ def sections_of(library, header_lines=(), signature_lines=()):
     out = []
     if header_lines:
         out.append(Section("header", "Contract header", "\n".join(text for _, text in header_lines)))
-    out += [Section(c.key, c.title, clause_words(c), c) for c in library if c.included]
+    out += [Section(c.key, c.title, clause_words(c), c) for c in library if c.in_contract]
     lines = [line for line in signature_lines if line]
     if lines:
         out.append(Section("signature", "Signature block", "\n".join(lines)))
@@ -394,7 +394,7 @@ def _merge(a, b):
 
 def dependency_findings(library):
     """Findings made by the app without AI: a clause in the draft that still refers to a clause that was taken out."""
-    order = {c.key: n for n, c in enumerate(c for c in library if c.included)}
+    order = {c.key: n for n, c in enumerate(c for c in library if c.in_contract)}
     out = []
     for n, d in enumerate(broken_references(library), start=1):
         out.append(Finding(f"d{n}", "removed_clause", d["clause_key"], d["clause"],

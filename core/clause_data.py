@@ -70,7 +70,7 @@ def build_library():
                                      "system."),
            ]),
 
-        Clause("late_payment_interest", "Late-payment interest (an item of the clause on payment)",
+        Clause("late_payment_interest", "Late-payment interest",
                items=[
                    Item("In the event that the Owner fails to make the payment to the Contractor within the period "
                         "stipulated in clause 3.3, the Owner shall pay interest at the rate of 0.05 (zero point zero "

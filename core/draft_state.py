@@ -7,18 +7,16 @@ from core.wording import apply_edits
 
 
 def merge_into_parents(library):
-    """An optional clause with a `parent` is written as numbered items at the end of that clause when it is ticked (and the parent is in the
-    draft); it is then no longer a clause of its own. Unticked, it stays in the list, out of the draft, so that it can be offered and ticked."""
+    """An optional clause with a `parent` is written as numbered items at the end of that clause when it is ticked and the parent is in the
+    draft: its items move to the parent and it keeps its place in the list, ticked, with no items of its own (it is not a clause of the contract:
+    see Clause.in_contract). This way the clause stays in the picker, can be unticked, and the AI sees that it is in the draft."""
     by_key = {c.key: c for c in library}
-    merged = []
     for clause in library:
         parent = by_key.get(clause.parent) if clause.parent else None
-        if parent is None or not clause.included:
-            continue
-        if parent.included:
+        if parent is not None and clause.included and parent.included:
             parent.items.extend(clause.items)
-        merged.append(clause)
-    return [c for c in library if c not in merged]
+            clause.items = []
+    return library
 
 
 def library_for(included, limits=None, drafted=None, term_sheet=None, edits=None, failed=None):

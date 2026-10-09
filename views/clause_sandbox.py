@@ -138,6 +138,13 @@ def render_picker(state_key, noun="draft"):
         st.markdown("**Optional clauses**")
         st.caption(f"Not included by default. Tick to add one to this {noun}.")
         grid(optional)
+        now = library_for(included)                     # after the checkboxes above, so that it follows the ticks of this run
+        numbered = {c.key: (n, c, items) for n, c, items in renumber_and_render(now)}
+        for c in now:
+            if c.parent and included.get(c.key):        # only while it is ticked: say where this optional clause is written
+                host = numbered.get(c.parent)
+                st.caption(f"{c.title}: " + (f"written as item {host[0]}.{len(host[2])} at the end of clause {host[0]}, {host[1].title}." if host
+                                             else "not written, because the clause it belongs to is not in the draft."))
     st.caption(f"{sum(included.values())} of {len(included)} clauses included.")
 
 

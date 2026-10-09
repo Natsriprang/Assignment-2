@@ -3,7 +3,7 @@
 
 def renumber_and_render(clauses):
     """Returns [(display_number, clause, [rendered_item_strings]), ...]."""
-    included = [c for c in clauses if c.included]
+    included = [c for c in clauses if c.in_contract]
     result = []
     for i, clause in enumerate(included):
         new_number = str(i + 1)
