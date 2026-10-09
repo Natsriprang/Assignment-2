@@ -29,6 +29,11 @@ def plain(text):
     return re.sub(r"([\\`*_\[\]#>|~$<])", r"\\\1", text)
 
 
+def aligned(text, align, bold=False):
+    """A paragraph with its alignment ("center", "right" or "justify"); the text is escaped as HTML, so a placeholder like [*] is shown as typed."""
+    st.markdown(f"<div style='text-align:{align}'>{'<b>' if bold else ''}{html.escape(text)}{'</b>' if bold else ''}</div>", unsafe_allow_html=True)
+
+
 def current_limits():
     """The caps chosen on the term sheet (defaults if none were chosen)."""
     return limits_of(st.session_state.get("term_sheet"))
@@ -144,13 +149,19 @@ def render_preview(state_key, noun="draft", download=True, header=False):
     if header:
         show_blanks(header_lines, rendered, current_term_sheet(), signature)
         with st.container(border=True):
+            recital = 0
             for style, text in header_lines:
                 if style == "title":
-                    st.markdown(f"**{plain(text)}**")
-                elif style in ("centre", "para"):
-                    st.write(plain(text))
+                    aligned(text, "center", bold=True)
+                elif style == "centre":
+                    aligned(text, "center")
+                elif style == "right":
+                    aligned(text, "right")
+                elif style == "numbered":
+                    recital += 1
+                    aligned(f"{recital}. {text}", "justify")
                 else:
-                    st.write(plain(("\u2022 " if style == "bullet" else "") + text))
+                    aligned(("\u2022 " if style == "bullet" else "") + text, "justify")
     st.subheader(f"Preview ({len(rendered)} clauses)")
 
     flagged = cross_reference_scan(library)
@@ -168,7 +179,7 @@ def render_preview(state_key, noun="draft", download=True, header=False):
     with st.container(border=True):
         st.markdown(f"**{number}. {clause.title}**")
         for n, p in enumerate(clause.plain_paragraphs):
-            st.write(plain(p))
+            aligned(p, "justify")
             if n == 0 and not items:                       # a clause without numbered items: its table follows its first paragraph
                 for table_data in clause.tables:
                     show_table(table_data)
@@ -176,7 +187,7 @@ def render_preview(state_key, noun="draft", download=True, header=False):
             if line.startswith("    "):
                 st.caption(plain(line.strip()))
             else:
-                st.write(plain(line))
+                aligned(line, "justify")
             if i == 0:
                 for table_data in clause.tables:
                     show_table(table_data)

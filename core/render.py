@@ -22,7 +22,7 @@ def _add_table(doc, table_data):
 def _add_signature_block(doc, block):
     """The closing sentence, then one borderless two-column table: a column per party, a paragraph per line."""
     doc.add_paragraph()
-    doc.add_paragraph(block["closing"])
+    doc.add_paragraph(block["closing"]).alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
     table = doc.add_table(rows=1, cols=len(block["parties"]))
     for cell, party in zip(table.rows[0].cells, block["parties"]):
         for n, line in enumerate(party["lines"]):
@@ -40,10 +40,20 @@ def render_docx(clauses, out_path, header=None, signature=None):
     doc.styles["Normal"].font.name = "Calibri"
     doc.styles["Normal"].font.size = Pt(11)
 
+    recital = 0
     for style, text in header or [("title", "Construction and Installation Service Agreement")]:
         p = doc.add_paragraph()
         if style in ("title", "centre"):
             p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        if style == "right":
+            p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        if style in ("para", "bullet", "numbered", "indent"):
+            p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+        if style == "numbered":                                # a recital: a number in front, the text hanging
+            recital += 1
+            p.paragraph_format.left_indent = Cm(1.0)
+            p.paragraph_format.first_line_indent = Cm(-0.7)
+            text = f"{recital}.\t{text}"
         if style == "bullet":
             p.paragraph_format.left_indent = Cm(1.0)
             p.paragraph_format.first_line_indent = Cm(-0.5)
@@ -62,13 +72,14 @@ def render_docx(clauses, out_path, header=None, signature=None):
         r.bold = True
 
         for n, p in enumerate(clause.plain_paragraphs):
-            doc.add_paragraph(p)
+            doc.add_paragraph(p).alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
             if n == 0 and not item_lines:                      # a clause without numbered items: its table follows its first paragraph
                 for table_data in clause.tables:
                     _add_table(doc, table_data)
 
         for i, line in enumerate(item_lines):
             p = doc.add_paragraph()
+            p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
             if line.startswith("    "):
                 p.paragraph_format.left_indent = Cm(1.0)
                 p.add_run(line.strip())

@@ -80,7 +80,7 @@ def test_a_complete_term_sheet_fills_every_header_field_it_has_data_for():
         ("title", "Construction and Installation Service Agreement"),
         ("centre", "for the Photovoltaic Solar Power Rooftop Facility"),
         ("centre", "Rooftop PV Project with 500 kWp"),
-        ("centre", "Contract no.: C-2026-001"),
+        ("right", "Contract no.: C-2026-001"),
         ("para", "This construction and installation service agreement (the \u201cAgreement\u201d) is made on 1 November 2026 "
                  "(the \u201cdate of this Agreement\u201d) at [*]."),
         ("para", "Between:"),
@@ -92,10 +92,10 @@ def test_a_complete_term_sheet_fills_every_header_field_it_has_data_for():
                    "\u201cContractor\u201d"),
         ("para", "The Owner and the Contractor are hereinafter referred to as the \u201cParties\u201d"),
         ("para", "WHEREAS"),
-        ("indent", "The Owner wishes to install the photovoltaic solar power system on the rooftop (the \u201cSystem\u201d) located at "
+        ("numbered", "The Owner wishes to install the photovoltaic solar power system on the rooftop (the \u201cSystem\u201d) located at "
                    "Bangkok, Thailand (the \u201cProject\u201d). The Contractor is an expert in providing services on design, construct "
                    "and installation of the System."),
-        ("indent", "The Parties wish to enter into the subcontracting services on construction and installation agreement for the "
+        ("numbered", "The Parties wish to enter into the subcontracting services on construction and installation agreement for the "
                    "photovoltaic solar power rooftop in accordance with the terms and conditions set out in this Agreement."),
     ]
 
@@ -141,14 +141,40 @@ def test_the_word_file_starts_with_the_header_and_clause_numbering_is_unchanged(
     assert lines[0] == TITLE and lines[1] == "for the Photovoltaic Solar Power Rooftop Facility"
     assert "Rooftop PV Project with 500 kWp" in lines and "Contract no.: C-2026-001" in lines and "WHEREAS" in lines
     assert any(l.startswith("\u2022 Solar Owner Co., Ltd.") for l in lines) and any(l.startswith("\u2022 Sun Build Co., Ltd.") for l in lines)
-    first_clause = next(i for i, l in enumerate(lines) if l.startswith("1.\t"))
-    assert lines.index("WHEREAS") < first_clause
+    first_clause = next(i for i, l in enumerate(lines) if l.startswith("1.\t") and i > lines.index("WHEREAS") + 2)   # after the two recitals
     assert lines[first_clause] == "1.\tConstruction and Installation Service Agreement"
 
 
 def test_without_a_header_the_old_title_only_output_is_unchanged():
     lines = docx_lines(None)
     assert lines[0] == TITLE and lines[1].startswith("1.\t")
+
+
+def test_word_file_right_aligns_contract_no_and_numbers_the_recitals():
+    import io
+    from docx import Document
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from core.render import render_docx
+    buf = io.BytesIO()
+    render_docx([], buf, header=build_header(full_term_sheet()))
+    buf.seek(0)
+    paras = Document(buf).paragraphs
+    contract_no = next(p for p in paras if p.text.startswith("Contract no."))
+    assert contract_no.alignment == WD_ALIGN_PARAGRAPH.RIGHT
+    recitals = [p.text for p in paras if p.text[:2] in ("1.", "2.")]
+    assert len(recitals) == 2 and recitals[0].startswith("1.\tThe Owner wishes") and recitals[1].startswith("2.\tThe Parties wish")
+
+
+def test_word_file_justifies_the_text_and_keeps_the_title_centred():
+    from docx.enum.text import WD_ALIGN_PARAGRAPH as A
+    buf = io.BytesIO()
+    render_docx(library_for({}), buf, header=build_header(full_term_sheet()))
+    buf.seek(0)
+    paras = [p for p in Document(buf).paragraphs if p.text.strip()]
+    assert paras[0].alignment == A.CENTER and paras[1].alignment == A.CENTER
+    for p in paras:
+        if p.text.startswith(("This construction", "\u2022 ", "The Owner and the Contractor", "1.\tThe Owner wishes")) or len(p.text) > 200:
+            assert p.alignment == A.JUSTIFY, p.text[:40]
 
 
 if __name__ == "__main__":
