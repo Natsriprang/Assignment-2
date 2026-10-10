@@ -29,7 +29,7 @@ class TermSheet:
     owner_address: str = ""
 
     contractor_name: str = ""
-    contractor_country: str = "Thailand"
+    contractor_country: str = ""
     contractor_reg_no: str = ""
     contractor_signatory: str = ""
     contractor_address: str = ""
@@ -63,7 +63,7 @@ class TermSheet:
     contractor_contact_phone: str = ""
     contractor_contact_email: str = ""
 
-    limits: dict = field(default_factory=dict)   # parameter key -> percent, or None for "no cap"
+    limits: dict = field(default_factory=dict)   
 
 
 
@@ -72,7 +72,7 @@ REQUIRED_FIELDS = [
     "contract_price_number", "governing_law",
 ]
 
-NEW_FIELD_DEFAULTS = {"governing_law": "", "owner_country": "", "contractor_country": "Thailand", "signing_place_choice": "",
+NEW_FIELD_DEFAULTS = {"governing_law": "", "owner_country": "", "contractor_country": "", "signing_place_choice": "",
                       "signing_place_other": "", "payment_days": "30", "owner_witnesses": "", "contractor_witnesses": "",
                       "deadline_mode": "", "completion_days": "", "owner_contact_email": "", "contractor_contact_email": "",
                       "additional_conditions": dict}
