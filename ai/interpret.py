@@ -201,8 +201,8 @@ digits followed by the same figure in words in brackets, for example "5 (five) p
 the new figure the same way, with the words matching the digits. Use only figures the user gave.
    - A "remove_part" whose provision_quote is the whole point or sentence (for example the point "7) epidemic."): leave \
 new_text as an empty string. The system takes the whole point out and puts the numbering and punctuation of its list right.
-   - "add": new_text is the new sentence to add at the end of the clause, in the clause's own style, using only the \
-facts and figures the user gave.
+   - "add": new_text is ONLY the new sentence to add at the end of the clause, in the clause's own style, using only the \
+facts and figures the user gave. Never copy any sentence that is already in the clause into new_text.
    If you cannot write it safely, set new_text to an empty string; the user will be told.
 A wording change that an earlier reply of yours proposed ("Proposed wording change in <clause>: ...") stands until the \
 user applies it, rejects it or asks for something different. While it stands, keep it as a deviation with the same \
@@ -590,6 +590,11 @@ def _attach_rewrite(deviation, clause, raw):
     if deviation.change_type == "add":
         if new and any(wording.norm(text).lower() == new.lower() for _, text in wording.units(clause)):
             return True
+        if new:
+            only_new = wording.without_existing(clause, new)       # only the new sentence: never the clause's own text again
+            if not only_new:
+                return True                                        # the AI wrote only what the clause already says
+            new = only_new
         reason = wording.check_rewrite("", new, "add", "", request_text)
     else:
         found = wording.find_unit(clause, deviation.provision_quote)

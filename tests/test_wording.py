@@ -14,7 +14,7 @@ from core.header import build_header
 from core.render import render_docx
 from core.renumber import renumber_and_render
 from core.wording import (apply_edits, check_rewrite, core_text, diff_markup, figure_mismatches, figure_swap, find_unit, norm, removable,
-                          removal_of, split_point, splice_fragment, unit_hits, units)
+                          removal_of, split_point, splice_fragment, unit_hits, units, without_existing)
 
 LD_QUOTE = "at the rate of 0.05 (zero point zero five) percent of the Contract Price per day"
 REQ = "Reduce the delay damages rate to 0.03% per day. reduce delay damages to 0.03% per day"
@@ -440,6 +440,16 @@ def test_both_sides_are_whole_and_bold_what_changes():
     assert diff_markup("same words", "same words") == ("same words", "same words")
     assert diff_markup("pay within 30 days", "pay within 30 days and 15 hours")[0] == "pay within 30 days"           # words only put in: nothing bold in the current wording
     assert diff_markup("a [b] *c*", "a [b] *d*") == ("a \\[b\\] **\\*c\\***", "a \\[b\\] **\\*d\\***")           # markdown characters are escaped
+
+
+def test_added_sentence_does_not_repeat_the_clause():
+    c = clause("suspension")
+    own = " ".join(text for _, text in units(c))
+    new = "The Contractor may suspend the Works if any installment remains unpaid more than 15 days after its due date."
+    assert without_existing(c, own + " " + new) == new, "the clause's own sentences the AI wrote again are taken out"
+    assert without_existing(c, new) == new, "a new sentence alone is not touched"
+    assert without_existing(c, own) == "", "nothing new is left when the AI wrote only the clause again"
+    assert without_existing(c, new + " " + own) == new, "also when the new sentence comes first"
 
 
 def test_norm_is_one_line_with_single_spaces():

@@ -72,6 +72,16 @@ _REPORT = """Report only one kind of problem, a contradiction: two sentences of 
 example two different periods for the same obligation, a party that may do something in one sentence and may not in another, or a sentence \
 that refers to a cap, a figure or a condition that another sentence no longer has).
 
+Before you report a pair, apply this test: could both sentences be true and be applied together in the same contract? If yes, it \
+is NOT a contradiction. A right to suspend the Works and a right to terminate the contract are different remedies with their own \
+periods: they work together (suspend first, terminate later) even when their numbers of days differ. Different remedies, different \
+parties' rights, and a general rule next to a specific one are not contradictions. Report a pair only when following one sentence \
+means breaking the other.
+
+Two sentences about different matters do not contradict each other, even when both have a period or a figure: for example a right to \
+suspend the Works and a right to terminate the contract can sit together. Report only sentences that answer the same question \
+differently.
+
 Report only a contradiction that one of the CHANGES causes, and give the id of that change as change_id. At least one of the two sentences \
 must be the sentence of that change as it reads now (a change that took a sentence out has no words now: then the contradiction is between \
 two sentences that remain). When there are no changes, leave change_id empty.

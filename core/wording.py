@@ -123,6 +123,17 @@ def _quote_range(old, quote):
     return (inside[0], inside[-1]) if inside else None
 
 
+def without_existing(clause, new):
+    """The AI was asked for only the new sentence, but it may write the clause's own sentences again before it. Those are taken
+    out, so that the clause does not get its own text twice. Only whole existing sentences, points or paragraphs are removed."""
+    text = norm(new)
+    for _, unit in sorted(units(clause), key=lambda u: -len(norm(u[1]))):
+        u = norm(unit)
+        if len(u) >= 20:
+            text = re.sub(re.escape(u), " ", text, flags=re.IGNORECASE)
+    return norm(text).strip()
+
+
 def check_rewrite(old, new, change_type, quote, request_text):
     """"" when the new text may be written into the contract, else the reason, as a sentence for the user.
     `old` is the unit being changed ("" for an added sentence); `request_text` is what the user asked for."""
