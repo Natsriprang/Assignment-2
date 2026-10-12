@@ -10,10 +10,10 @@ Password: 1816076
 1. Open the URL and type the password.
 2. Type an OpenAI API key and press Update API Key on the side bar.
 3. Go to Draft contract. Upload a term sheet (the Excel file). The template is data/term_sheet_template_EN.xlsx. Three Excel examples are in test_cases/.
-4. Step Term sheet: In this page, user can choose to upload the Excel term sheet or fill in the term manually. User can make changes to various conditions and clauses. User can add a request directly in the Additional condition block, which will transfer the input to the next page. 
+4. Step Term sheet page: In this page, user can choose to upload the Excel term sheet or fill in the term manually. User can make changes to various conditions and clauses. User can add a request directly in the Additional condition block, which will transfer the input to the next page. 
 When the Excel file is uploaded, user can press Auto-fill the term sheet and press Continue at the bottom of the page. The app then reads the sheet and shows problems such as missing items, conflicts information with the term sheet.
-5. Step Clauses: the user can type a request, ask a question about the contract, add optional clauses, and ask for a new clause. The chatbot will show the proposed change first and the change will be made to the contract only after the user pressed Apply. You can also reject, edit, or undo the applied request.
-6. Step Preview: There are 2 tabs. First, the summary of the contract including a list of changes. Second, the risks and a review of the contract. The user can download the contract and the approval memo in Word document.
+5. Step Clauses page: user can type a request, ask a question about the contract, add optional clauses, and ask for a new clause. The chatbot will show the proposed change first and the change will be made to the contract only after the user pressed Apply. You can also reject, edit, or undo the applied request. User can also use preview clause function to see the content of each clause. Any changes made will also be translate into this preview clause tab. 
+6. Step Preview page: There are 2 tabs here. First, the summary of the contract including a list of changes. Second, the risks and a review of the contract. The user can download the contract and the approval memo in Word document.
 
 ## What the code does and what the AI does
 
@@ -22,13 +22,13 @@ The code does everything that must be exact including reading the term sheet, fi
 ## AI steps
 The counter on the page shows the number of AI calls in the run. Every run has at least 5.
 Step of the AI calls:
-1. Check the term sheet for problems.
-2. Interpret the request which reads what the user typed and the term sheet and says which clauses change.
+1. Check the term sheet for problems. `term_sheet_check`
+2. Interpret the request which reads what the user typed and the term sheet and says which clauses change. `interpret`
 3. Find references clauses from the reference library for a new clause.
 4. Generate the content by writing the new clause or the changed sentence.
 5. Check the risks.
-6. Review using two independent reads of the final draft look for sentences that contradict each other.
-7. Summary and memo. The model writes the overview; code writes the facts table, the list of changes and the approval memo.
+6. Review using two independent reads of the final draft look for sentences that contradict each other. `review_by_matter`, `review_by_changes`
+7. Summary and memo. The model writes the overview; code writes the facts table, the list of changes and the approval memo. `exsum_overview`
 
 Shortest run (no changes made to the contract) uses 5 calls including step 1, 2, 6 (this step has 2 AI calls), and 7.
 
@@ -104,7 +104,7 @@ Steps
 
 Expected
 - The governing law sentence in Miscellaneous says the Agreement is governed by the laws of Victoria, Australia.
-- The rest of the standard contract is still the template's Thai-law wording. For example the Taxation clause is about withholding tax "according to the revenue code" and the orders of the Director-General of the Revenue Department. The app does not warn about this, and the Owner's country in the header stays `[*]`. The template is written under Thai law, so the app fills the law in but does not adapt the contract to it.
+- The rest of the standard contract is still the template's Thai-law wording. For example the Taxation clause is about withholding tax "according to the revenue code" and the orders of the Director-General of the Revenue Department. The app does not warn about this, the template is still written under Thai law and does not make changes in the contract to the foreign law.
 - No clause in the reference library is about limitation of liability. Therefore, the clause is written by the model from general drafting practice and the page says that no reference was found. Its wording is not checked against Australian law (for example statutory limits on excluding liability).
 - The Risk tab may flag the new clause, but it is not designed to say that the clause is wrong for the chosen law.
 
