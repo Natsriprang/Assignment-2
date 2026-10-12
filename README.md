@@ -33,14 +33,14 @@ Step of the AI calls:
 Shortest run (no changes made to the contract) uses 5 calls including step 1, 2, 6 (this step has 2 AI calls), and 7.
 
 ## Files
-app.py: entry point and password page
-api_key.py: course credentials module
-views/: the pages and the three steps
-ai/: the AI steps
-core/: the code that works without AI (term sheet, clauses, numbering, Word files, memo)
-data/term_sheet_template_EN.xlsx: the term sheet template
-data/reference/: clause library used when drafting a new clause
-test_cases/: the 3 sample term sheets
+1. app.py: entry point and password page
+2. api_key.py: course credentials module
+3. views/: the pages and the three steps
+4. ai/: the AI steps
+5. core/: the code that works without AI (term sheet, clauses, numbering, Word files, memo)
+6. data/term_sheet_template_EN.xlsx: the term sheet template
+7. data/reference/: clause library used when drafting a new clause
+8. test_cases/: the 3 sample term sheets
 
 ## Test cases
 3 test cases (the Excel files in test_cases/). 
