@@ -41,7 +41,6 @@ core/: the code that works without AI (term sheet, clauses, numbering, Word file
 data/term_sheet_template_EN.xlsx: the term sheet template
 data/reference/: clause library used when drafting a new clause
 test_cases/: the 3 sample term sheets
-tests/: offline tests
 
 ## Test cases
 3 test cases (the Excel files in test_cases/). 
