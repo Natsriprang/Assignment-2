@@ -24,9 +24,9 @@ The counter on the page shows the number of AI calls in the run. Every run has a
 Step of the AI calls:
 1. Check the term sheet for problems. `term_sheet_check`
 2. Interpret the request which reads what the user typed and the term sheet and says which clauses change. `interpret`
-3. Find references clauses from the reference library for a new clause.
-4. Generate the content by writing the new clause or the changed sentence.
-5. Check the risks.
+3. Find references clauses from the reference library for a new clause. `select_references`
+4. Generate the content by writing the new clause or the changed sentence.`draft_clause`
+5. Check the risks arising from the changes. `risk_flagging`
 6. Review using two independent reads of the final draft look for sentences that contradict each other. `review_by_matter`, `review_by_changes`
 7. Summary and memo. The model writes the overview; code writes the facts table, the list of changes and the approval memo. `exsum_overview`
 
