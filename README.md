@@ -10,7 +10,8 @@ Password: 1816076
 1. Open the URL and type the password.
 2. Type an OpenAI API key and press Update API Key on the side bar.
 3. Go to Draft contract. Upload a term sheet (the Excel file). The template is data/term_sheet_template_EN.xlsx. Three Excel examples are in test_cases/.
-4. Step Term sheet: After the file is uploaded, you can press Auto-fill the term sheet and press Continue at the bottom of the page. The app reads the sheet and shows problems such as missing items, conflicts information with the term sheet.
+4. Step Term sheet: In this page, user can choose to upload the Excel term sheet or fill in the term manually. User can make changes to various conditions and clauses. User can add a request directly in the Additional condition block, which will transfer the input to the next page. 
+When the Excel file is uploaded, user can press Auto-fill the term sheet and press Continue at the bottom of the page. The app then reads the sheet and shows problems such as missing items, conflicts information with the term sheet.
 5. Step Clauses: the user can type a request, ask a question about the contract, add optional clauses, and ask for a new clause. The chatbot will show the proposed change first and the change will be made to the contract only after the user pressed Apply. You can also reject, edit, or undo the applied request.
 6. Step Preview: There are 2 tabs. First, the summary of the contract including a list of changes. Second, the risks and a review of the contract. The user can download the contract and the approval memo in Word document.
 
