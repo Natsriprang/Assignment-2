@@ -57,7 +57,7 @@ Steps
 3. Open the Preview step. Open the Contract tab and the Checks tab. Download the Word file and the approval memo.
 
 Expected
-- The term sheet is read with the country of registration of both parties are missing and no conflicts.
+- The term sheet is read with the country of registration of both parties are missing, the registration number of owner does not match the requirement in the term sheet.
 - The facts table shows a brief summary of the key terms. 
 - The draft has the 15 standard clauses and blank fields including the place of signing and the Parties' country in the header, and the witnesses in the signature block. The Word file shows them as [*].
 - "Changes made to the contract" in the Preview page should say "No change from the standard contract." and the Risk box says there is nothing to assess, with no AI call.
