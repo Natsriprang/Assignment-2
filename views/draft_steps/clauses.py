@@ -41,8 +41,6 @@ UNDO_NOTE_KEY = "draft_undo_note"      # what the last Undo took out besides the
 APPLIED_KEY = "draft_applied_log"     # [{"id", "entries": [...]}]: what each Apply wrote into the draft, kept for the whole session
 AUTO_KEY = "auto_analysis"           # the term sheet the first analysis was started on by itself, so it is not started again on every run
 NO_REQUEST_BUTTON = "No special requests \u2014 apply the term sheet's rules"
-NO_REQUEST_NOTE = ("This runs one AI analysis. With no request from you it looks only at what the term sheet itself calls for, "
-                   "for example suggesting the Owner's Representations clause when the roof owner is a different party from the Owner.")
 
 
 def plain(text):
@@ -997,15 +995,11 @@ def render():
                 if client is not None and not auto:
                     skip = st.button("Read the additional conditions again")
             else:
-                st.write("What would you like to change from the standard contract? For example: "
-                         "\u201cclient wants to drop the construction timeline\u201d. I also check the term "
-                         "sheet itself, for example whether the roof owner is a different party from the Owner. "
-                         "You can also ask me a question about the draft, for example \u201cwhat does the delay clause say?\u201d.")
+                st.write("What would you like to change from the standard contract? "
+                         "You can also ask me a question about the draft and term sheet.")
                 skip = st.button(NO_REQUEST_BUTTON, disabled=client is None)
-                st.caption(NO_REQUEST_NOTE)
     elif latest is None and not has_analysis() and not conditions:
         skip = st.button(NO_REQUEST_BUTTON, disabled=client is None)          # only questions so far: the analysis has not run
-        st.caption(NO_REQUEST_NOTE)
 
     quick_reply = draft_request = None
     for i, msg in enumerate(chat):
