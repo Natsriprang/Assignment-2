@@ -3,7 +3,6 @@
 The app helps in-house legal draft a rooftop solar construction and installation contract under Thai law. The user can upload an Excel term sheet or fill the field and the app turns it into a Word contract. The app also lets the user ask for changes, checks the result, and produces an approval memo.
 
 App URL: *
-Password: 1816076
 
 ## How to use the app
 
