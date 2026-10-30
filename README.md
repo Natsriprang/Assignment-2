@@ -46,6 +46,8 @@ Case 1 is the shortest run.
 Case 2 uses every function. 
 Case 3 shows a limitation.
 
+AI wording can be different from the expected results.
+
 ### Case 1: standard contract with no changes.
 File: case1_term_sheet.xlsx
 Steps
