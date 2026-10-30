@@ -84,7 +84,7 @@ Expected
 - The question is answered from the draft and the answer lists what the agent looked at but the draft does not change.
 - The facts table shows the key terms and changes.
 - The Risk tab shows at least one risk for taking out the cap on liquidated damage. All changes made to the contract will list the rate change and the removed cap, the advance payment clause as new, and the Suspension of Works condition.
-- Review tab finds that the delay damages now have no cap while Breach and Termination still has a cap on total damages, and names both sentences.
+- Review tab might find that the delay damages now have no cap while Breach and Termination still has a cap on total damages, and names both sentences even if it is different matter.
 
 ### Case 3: a limitation (law other than the template's, and a clause with no reference)
 File: case3_term_sheet.xlsx (University of Melbourne, 100 kWp rooftop in Victoria, Australia. Governing law "Victoria, Australia").
