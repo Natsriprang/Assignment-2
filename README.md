@@ -100,8 +100,7 @@ Steps
 Expected
 - The governing law sentence in Miscellaneous says the Agreement is governed by the laws of Victoria, Australia.
 - The contract is still uses the standard template and the app does not make changes in the contract to comply with foreign law.
-- No clause in the reference library is about limitation of liability. Therefore, the clause is written by the AI from its drafting practice and the page says that no reference was found. Its wording is not checked against Australian law.
-- The Risk tab may flag the new clause, but it would not say that the clause is wrong for the chosen law.
+- There is no reference about limitation of liability in the library. Therefore, the clause is written by the AI from its drafting practice and the page says that no reference was found. Its wording is not checked against Australian law.
 
 ## Limitations
 
