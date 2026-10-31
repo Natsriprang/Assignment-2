@@ -89,7 +89,7 @@ Expected
 - Review tab might find that the delay damages now have no cap while Breach and Termination still has a cap on total damages, and names both sentences even if it is different matter.
 
 ### Case 3: a limitation (law other than the template's, and a clause with no reference)
-File: case3_term_sheet.xlsx (University of Melbourne, 100 kWp rooftop in Victoria, Australia. Governing law "Victoria, Australia").
+File: case3_term_sheet.xlsx.
 
 Steps
 1. Upload the file, press Auto-fill the form, and press Continue.
